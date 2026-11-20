@@ -2,9 +2,47 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta name="google-site-verification" content="6WY0TNiZGmG9R4e1zScgWC5sz61JebzuUaymNI4Plp8" />
+<meta name="description" content="بكار لقطع غيار السيارات، نوفر قطع غيار هيونداي وكيا وسانج يونج، مستوردة وجديدة. اختار اللي يناسبك، مع بكار… عمرك ما هتحتار!">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="ar_EG">
+<meta property="og:title" content="بكار لقطع غيار السيارات">
+<meta property="og:description" content="قطع غيار هيونداي وكيا وسانج يونج مستوردة وجديدة، مع بكار عمرك ما هتحتار!">
+<meta property="og:url" content="https://bakkar-web.pages.dev/">
+<meta property="og:image" content="https://bakkar-web.pages.dev/bakkar-logo.png">
+<meta property="og:image:alt" content="شعار بكار لقطع غيار السيارات">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="بكار لقطع غيار السيارات">
+<meta name="twitter:description" content="قطع غيار هيونداي وكيا وسانج يونج مستوردة وجديدة، مع بكار عمرك ما هتحتار!">
+<meta name="twitter:image" content="https://bakkar-web.pages.dev/bakkar-logo.png">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>بكار لقطع غيار السيارات — BAKKAR Auto Parts</title>
+<title>بكار لقطع غيار السيارات — BAKKAR</title>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "AutoPartsStore",
+  "@id": "https://bakkar-web.pages.dev/#store",
+  "name": "بكار لقطع غيار السيارات",
+  "alternateName": "BAKKAR Auto Parts",
+  "url": "https://bakkar-web.pages.dev/",
+  "description": "نوفر قطع غيار هيونداي وكيا وسانج يونج مستوردة وجديدة بجودة مضمونة.",
+  "telephone": ["+201006818187", "+201006533302"],
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "67 شارع العسقلاني، نزلة الريحاني، الحرفيين",
+    "addressLocality": "السلام",
+    "addressRegion": "القاهرة",
+    "postalCode": "11788",
+    "addressCountry": "EG"
+  },
+  "hasMap": "https://maps.app.goo.gl/XKDmTyEA9WYYWHHV9",
+  "sameAs": [
+    "https://www.facebook.com/share/1BoQP3n3Gb/",
+    "https://maps.app.goo.gl/8TjMRXzubEjhgm1M7",
+    "https://linktr.ee/ahmedsamy1"
+  ]
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
@@ -13,6 +51,7 @@
 tailwind.config={theme:{extend:{fontFamily:{sans:['Cairo','sans-serif']},colors:{bk:{bg:'#F6F5F3',dark:'#2E2A27',red:'#BF070F',redH:'#9A050C',line:'#E5E4E0',hy:'#0055A5',kia:'#BB162B',sy:'#2E5A44'}}}}}
 </script>
 <style>
+html,body{max-width:100%;overflow-x:hidden}
 body{background:#F6F5F3;color:#1F1D1B;font-family:Cairo,sans-serif}
 .card{background:#fff;border:1px solid #E5E4E0;border-radius:12px}
 .inp{width:100%;background:#F6F5F3;border:1px solid #E5E4E0;border-radius:10px;padding:.55rem .75rem;font-size:.85rem;outline:none}
@@ -20,6 +59,8 @@ body{background:#F6F5F3;color:#1F1D1B;font-family:Cairo,sans-serif}
 .btn{background:#BF070F;color:#fff;font-weight:700;font-size:.85rem;padding:.65rem 1.1rem;border-radius:10px}
 .btn:hover{background:#9A050C}
 .wa{background:#059669;color:#fff;font-weight:700;font-size:.85rem;padding:.65rem 1.1rem;border-radius:10px}
+.card,.inp,select,input,textarea{min-width:0;max-width:100%}
+@media(max-width:639px){header img{height:2.75rem}.waFloatSafe,main{padding-inline:.75rem}.card{border-radius:10px}header .gap-2{gap:.35rem}}
 </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -67,7 +108,7 @@ body{background:#F6F5F3;color:#1F1D1B;font-family:Cairo,sans-serif}
  <section id="discover" class="card p-5 space-y-4 scroll-mt-24">
   <div><h2 class="font-black text-lg">Smart Discovery — اكتشف القطعة</h2>
   <p class="text-xs text-stone-500">اختار سيارتك وهنعرض القطع المرتبطة. نتائج التوافق المؤكدة بس.</p></div>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
    <select id="dBrand" class="inp" onchange="fillModels()"><option value="">الماركة</option></select>
    <select id="dModel" class="inp" onchange="renderDiscover()"><option value="">الموديل</option></select>
    <input id="dYear" type="number" min="1995" max="2026" placeholder="سنة الصنع" class="inp" oninput="renderDiscover()">
@@ -79,7 +120,7 @@ body{background:#F6F5F3;color:#1F1D1B;font-family:Cairo,sans-serif}
  <!-- 4/5. الكتالوج -->
  <section id="catalog" class="space-y-3 scroll-mt-24">
   <h2 class="font-black text-lg">كتالوج قطع الغيار</h2>
-  <div class="card p-3 grid grid-cols-2 md:grid-cols-5 gap-2 items-center">
+  <div class="card p-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 items-center">
    <select id="fBrand" class="inp" onchange="renderCatalog()"><option value="">كل الماركات</option></select>
    <select id="fCat" class="inp" onchange="renderCatalog()"><option value="">كل الأقسام</option></select>
    <select id="fCond" class="inp" onchange="renderCatalog()"><option value="">كل الحالات</option><option>جديدة</option><option>استيراد</option></select>
