@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>بكار لقطع غيار السيارات — BAKKAR Auto Parts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>
+tailwind.config={theme:{extend:{fontFamily:{sans:['Cairo','sans-serif']},colors:{bk:{bg:'#F6F5F3',dark:'#2E2A27',red:'#BF070F',redH:'#9A050C',line:'#E5E4E0',hy:'#0055A5',kia:'#BB162B',sy:'#2E5A44'}}}}}
+</script>
+<style>
+body{background:#F6F5F3;color:#1F1D1B;font-family:Cairo,sans-serif}
+.card{background:#fff;border:1px solid #E5E4E0;border-radius:12px}
+.inp{width:100%;background:#F6F5F3;border:1px solid #E5E4E0;border-radius:10px;padding:.55rem .75rem;font-size:.85rem;outline:none}
+.inp:focus{border-color:#BF070F}
+.btn{background:#BF070F;color:#fff;font-weight:700;font-size:.85rem;padding:.65rem 1.1rem;border-radius:10px}
+.btn:hover{background:#9A050C}
+.wa{background:#059669;color:#fff;font-weight:700;font-size:.85rem;padding:.65rem 1.1rem;border-radius:10px}
+</style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<header class="sticky top-0 z-40 bg-bk-dark text-white shadow-md">
+ <div class="max-w-6xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+  <a href="#top" class="shrink-0"><img src="bakkar-logo.png" alt="شعار بكار" class="h-12 w-auto"></a>
+  <div class="order-3 md:order-2 w-full md:flex-1 md:max-w-lg relative">
+   <input id="q" oninput="onSearch()" autocomplete="off" placeholder="ابحث باسم القطعة أو رقمها (عربي / English) — مثال: مساعد، Sonata، BKR-HY"
+    class="w-full bg-white text-stone-900 text-sm rounded-xl py-2.5 px-4 outline-none">
+   <div id="sugg" class="hidden absolute top-full mt-1 w-full bg-white text-stone-800 rounded-xl shadow-xl border border-bk-line overflow-hidden text-sm z-50"></div>
+  </div>
+  <div class="order-2 md:order-3 flex gap-2 text-xs font-bold">
+   <a href="#discover" class="hidden sm:block bg-white/10 px-3 py-2.5 rounded-xl">اكتشف القطعة</a>
+   <a href="#ask" class="bg-bk-red px-3 py-2.5 rounded-xl">Ask Bakkar</a>
+   <a href="#contact" class="hidden sm:block bg-white/10 px-3 py-2.5 rounded-xl">تواصل</a>
+  </div>
+ </div>
+</header>
+
+<main id="top" class="flex-1 max-w-6xl w-full mx-auto px-4 py-6 space-y-8">
+
+ <!-- 1. الواجهة الرئيسية -->
+ <section class="card overflow-hidden">
+  <div class="h-1.5 bg-gradient-to-l from-bk-red via-bk-dark to-bk-hy"></div>
+  <div class="p-6 sm:p-8 space-y-3">
+   <p class="text-bk-red font-black text-lg">مع بكار… عمرك ما هتحتار</p>
+   <h1 class="text-2xl sm:text-3xl font-black leading-snug">قطع غيار Hyundai و Kia و SsangYong</h1>
+   <p class="text-stone-600 text-sm">بيع قطع غيار السيارات الكورية الجديدة والاستيراد — الحرفيين، القاهرة. اختار الماركة، أو دور بالاسم أو الرقم، أو قولنا المشكلة ونساعدك توصل للقطعة.</p>
+   <div class="flex flex-wrap gap-2 pt-1">
+    <a href="#discover" class="btn">ابدأ من هنا</a>
+    <a href="#ask" class="bg-white border border-bk-line font-bold text-sm px-4 py-2.5 rounded-xl">مش عارف اسم القطعة؟</a>
+   </div>
+   <p class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 inline-block">نسخة تجريبية: بيانات القطع أمثلة. السعر والتوافق والتوفر تُؤكَّد عند التواصل، والتغطية أغلبها موديلات 2015 فأحدث وبعض الموديلات الأقدم حسب القطعة.</p>
+  </div>
+ </section>
+
+ <!-- الماركات -->
+ <section>
+  <h2 class="font-black text-lg mb-3">الماركات</h2>
+  <div class="grid sm:grid-cols-3 gap-4" id="brandCards"></div>
+ </section>
+
+ <!-- 6. Smart Discovery -->
+ <section id="discover" class="card p-5 space-y-4 scroll-mt-24">
+  <div><h2 class="font-black text-lg">Smart Discovery — اكتشف القطعة</h2>
+  <p class="text-xs text-stone-500">اختار سيارتك وهنعرض القطع المرتبطة. نتائج التوافق المؤكدة بس.</p></div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+   <select id="dBrand" class="inp" onchange="fillModels()"><option value="">الماركة</option></select>
+   <select id="dModel" class="inp" onchange="renderDiscover()"><option value="">الموديل</option></select>
+   <input id="dYear" type="number" min="1995" max="2026" placeholder="سنة الصنع" class="inp" oninput="renderDiscover()">
+   <select id="dCat" class="inp" onchange="renderDiscover()"><option value="">كل الأقسام</option></select>
+  </div>
+  <div id="dOut" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+ </section>
+
+ <!-- 4/5. الكتالوج -->
+ <section id="catalog" class="space-y-3 scroll-mt-24">
+  <h2 class="font-black text-lg">كتالوج قطع الغيار</h2>
+  <div class="card p-3 grid grid-cols-2 md:grid-cols-5 gap-2 items-center">
+   <select id="fBrand" class="inp" onchange="renderCatalog()"><option value="">كل الماركات</option></select>
+   <select id="fCat" class="inp" onchange="renderCatalog()"><option value="">كل الأقسام</option></select>
+   <select id="fCond" class="inp" onchange="renderCatalog()"><option value="">كل الحالات</option><option>جديدة</option><option>استيراد</option></select>
+   <select id="fSort" class="inp" onchange="renderCatalog()"><option value="">الترتيب</option><option value="p1">السعر: الأقل</option><option value="p2">السعر: الأعلى</option><option value="n">الاسم</option></select>
+   <span class="text-xs text-stone-500 font-semibold text-center">النتائج: <b id="cnt">0</b></span>
+  </div>
+  <div id="grid" class="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+  <div id="empty" class="hidden card p-8 text-center space-y-3">
+   <p class="font-bold">ملقيناش قطعة مطابقة</p>
+   <p class="text-sm text-stone-500">جرب كلمة تانية (مثلاً اسم شائع أو بالإنجليزي) أو اطلب القطعة منّا.</p>
+   <a href="#ask" onclick="setMode('missing')" class="btn inline-block">اطلب القطعة</a>
+  </div>
+ </section>
+
+ <!-- 7/8. Ask Bakkar + Missing Parts -->
+ <section id="ask" class="card p-5 space-y-4 scroll-mt-24">
+  <div><h2 class="font-black text-lg">Ask Bakkar — مش عارف اسم القطعة؟</h2>
+  <p class="text-xs text-stone-500">اشرح المشكلة بكلامك، أو بلّغنا عن قطعة ملقيتهاش.</p></div>
+  <div class="flex gap-2 text-xs font-bold">
+   <button id="mAsk" onclick="setMode('ask')" class="px-4 py-2 rounded-lg">استفسار / وصف عطل</button>
+   <button id="mMiss" onclick="setMode('missing')" class="px-4 py-2 rounded-lg">قطعة مش موجودة</button>
+  </div>
+  <div class="grid sm:grid-cols-3 gap-3">
+   <select id="aBrand" class="inp"><option value="">ماركة السيارة</option></select>
+   <input id="aModel" class="inp" placeholder="الموديل (مثال: Cerato)">
+   <input id="aYear" type="number" class="inp" placeholder="سنة الصنع">
+  </div>
+  <textarea id="aDesc" rows="3" class="inp" placeholder="اوصف العطل أو القطعة المطلوبة..."></textarea>
+  <div class="grid sm:grid-cols-3 gap-3">
+   <input id="aPart" class="inp" placeholder="رقم القطعة (اختياري)">
+   <input id="aName" class="inp" placeholder="الاسم *">
+   <input id="aPhone" type="tel" class="inp" placeholder="رقم الموبايل / واتساب *">
+  </div>
+  <div class="flex flex-wrap items-center gap-3">
+   <label class="text-xs font-bold bg-bk-bg border border-bk-line rounded-lg px-3 py-2 cursor-pointer">📷 صورة القطعة أو مكان العطل
+    <input id="aImg" type="file" accept="image/*" class="hidden" onchange="previewImg(this)"></label>
+   <img id="aPrev" class="hidden h-12 rounded-lg border border-bk-line" alt="">
+   <button onclick="submitAsk()" class="btn mr-auto">إرسال الطلب</button>
+  </div>
+  <div id="aDone" class="hidden bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm space-y-2"></div>
+ </section>
+
+ <!-- 14. الثقة والمعلومات -->
+ <section id="contact" class="grid md:grid-cols-2 gap-4 scroll-mt-24">
+  <div class="card p-5 space-y-2.5">
+   <h2 class="font-black text-lg">عن بكار</h2>
+   <p class="text-sm text-stone-600 leading-relaxed">خبرة بدأت من سنين، ومعرفة بتفاصيل العربيات وقطع غيارها، علشان نساعدك توصل للقطعة المناسبة.</p>
+   <p class="text-sm">📍 67 شارع العسقلاني، نزلة الريحاني، الحرفيين، السلام، القاهرة 11788 — <a class="text-bk-red font-bold underline" target="_blank" rel="noopener" href="https://maps.app.goo.gl/XKDmTyEA9WYYWHHV9">الخريطة</a></p>
+   <div class="space-y-2 pt-1">
+    <div class="flex flex-wrap items-center gap-2"><span class="font-mono text-sm" dir="ltr">01006818187</span><a href="tel:+201006818187" class="bg-bk-dark text-white font-bold text-xs px-3 py-2 rounded-lg">📞 اتصال</a><a target="_blank" rel="noopener" id="wa1" class="wa !text-xs !py-2">💬 واتساب</a></div>
+    <div class="flex flex-wrap items-center gap-2"><span class="font-mono text-sm" dir="ltr">01006533302</span><a href="tel:+201006533302" class="bg-bk-dark text-white font-bold text-xs px-3 py-2 rounded-lg">📞 اتصال</a><a target="_blank" rel="noopener" id="wa2" class="wa !text-xs !py-2">💬 واتساب</a></div>
+   </div>
+   <div class="flex flex-wrap gap-3 pt-1 text-xs font-bold text-bk-red">
+    <a target="_blank" rel="noopener" href="https://www.facebook.com/share/1BoQP3n3Gb/">Facebook</a>
+    <a target="_blank" rel="noopener" href="https://maps.app.goo.gl/8TjMRXzubEjhgm1M7">Google Maps</a>
+    <a target="_blank" rel="noopener" href="https://linktr.ee/ahmedsamy1">Linktree</a></div>
+   <p class="text-[11px] text-stone-400">مواعيد العمل وسياسة الاستبدال والضمان: تُضاف بعد اعتمادها من الإدارة.</p>
+  </div>
+  <div class="card p-5 space-y-2">
+   <h2 class="font-black text-lg">معلومات مهمة</h2>
+   <details class="text-sm" open><summary class="font-bold cursor-pointer">حالة القطع الاستيراد</summary><p class="text-stone-600 mt-1">القطع المستوردة من كوريا بتتفرز قبل العرض، وممكن يكون فيها خدوش أو عيوب بسيطة. بنوضح حالة كل قطعة بصراحة قبل الشراء.</p></details>
+   <details class="text-sm"><summary class="font-bold cursor-pointer">التركيب</summary><p class="text-stone-600 mt-1">ممكن نرتب التركيب قدام المحل عند الطلب، حسب القطعة وبعد التأكيد.</p></details>
+   <details class="text-sm"><summary class="font-bold cursor-pointer">التوصيل</summary><p class="text-stone-600 mt-1">القاهرة هي منطقة التوصيل الأساسية، والمحافظات التانية بالاتفاق. ممكن يتم عبر خدمات زي Uber حسب الطلب والمكان. تواصل معانا لتأكيد الترتيب.</p></details>
+   <details class="text-sm"><summary class="font-bold cursor-pointer">السعر والتوفر والتوافق</summary><p class="text-stone-600 mt-1">بيتأكدوا معانا عند التواصل لو البيانات مش محدثة.</p></details>
+   <details class="text-sm"><summary class="font-bold cursor-pointer">مش لاقي القطعة أو اسمها؟</summary><p class="text-stone-600 mt-1">استخدم Ask Bakkar أو "قطعة مش موجودة" وهنرد عليك.</p></details>
+   <details class="text-sm"><summary class="font-bold cursor-pointer">الصور</summary><p class="text-stone-600 mt-1">الصور الحقيقية لمنتجات بكار بتتميز عن الصور التوضيحية. القطع الحالية في النسخة دي بدون صور فعلية.</p></details>
+  </div>
+ </section>
+</main>
+
+<footer class="bg-bk-dark text-stone-400 text-[11px] text-center py-5 mt-8">© 2026 بكار لقطع غيار السيارات — مع بكار… عمرك ما هتحتار</footer>
+<a id="waFloat" target="_blank" rel="noopener" class="fixed bottom-4 left-4 z-40 wa shadow-xl rounded-full">💬 واتساب</a>
+
+<!-- صفحة القطعة -->
+<div id="modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4" onclick="if(event.target===this)closeModal()">
+ <div class="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+  <div id="mBar" class="h-2"></div>
+  <div class="p-5 space-y-3" id="mBody"></div>
+ </div>
+</div>
+
+<script>
+// ===== بيانات تجريبية (Demo) — لا يوجد Backend أو تخزين =====
+const PHONE='201006818187',PHONE2='201006533302';
+const P=[
+{id:1,code:'BKR-SY-101',ar:'تيربو كامل',en:'Turbocharger',brand:'SsangYong',car:'Rexton',y1:2013,y2:2015,cat:'موتور وتبريد',cond:'استيراد',price:null,ok:1,alias:'تربو توربو'},
+{id:2,code:'BKR-HY-204',ar:'مساعد خلفي',en:'Rear Shock Absorber',brand:'Hyundai',car:'Sonata',y1:2013,y2:2017,cat:'عفشة وفرامل',cond:'جديدة',price:null,ok:1,alias:'ممتص صدمات شوك'},
+{id:3,code:'BKR-KI-308',ar:'مساعد خلفي',en:'Rear Shock Absorber',brand:'Kia',car:'Optima',y1:2018,y2:2018,cat:'عفشة وفرامل',cond:'جديدة',price:null,ok:1,alias:'ممتص صدمات شوك'},
+{id:4,code:'BKR-KI-112',ar:'خرطوم ردياتير علوي',en:'Upper Radiator Hose',brand:'Kia',car:'Cerato',y1:2013,y2:2015,cat:'موتور وتبريد',cond:'جديدة',price:null,ok:1,alias:'شلمون خرطوم مياه'},
+{id:5,code:'BKR-KI-405',ar:'فانوس أمامي ليد',en:'LED Headlight',brand:'Kia',car:'Carens',y1:2019,y2:2024,cat:'فوانيس',cond:'استيراد',price:null,ok:1,alias:'فنار كشاف لمبة'},
+{id:6,code:'BKR-SY-119',ar:'خرطوم ردياتير علوي',en:'Upper Radiator Hose',brand:'SsangYong',car:'Tivoli',y1:2017,y2:2022,cat:'موتور وتبريد',cond:'جديدة',price:null,ok:1,alias:'شلمون خرطوم مياه'},
+{id:7,code:'BKR-HY-310',ar:'طقم تيل فرامل أمامي',en:'Front Brake Pads',brand:'Hyundai',car:'Elantra',y1:2012,y2:2020,cat:'عفشة وفرامل',cond:'جديدة',price:null,ok:1,alias:'فحمات فرامل'},
+{id:8,code:'BKR-KI-215',ar:'طرمبة بنزين كاملة',en:'Fuel Pump Assembly',brand:'Kia',car:'Sportage',y1:2016,y2:2021,cat:'كهرباء',cond:'جديدة',price:null,ok:1,alias:'بمب بنزين عوامة'},
+{id:9,code:'BKR-HY-402',ar:'موبينة إشعال',en:'Ignition Coil',brand:'Hyundai',car:'Tucson',y1:2016,y2:2021,cat:'كهرباء',cond:'جديدة',price:null,ok:0,alias:'كويل بوبينة'},
+{id:10,code:'BKR-SY-208',ar:'طقم جلب مقصات أمامي',en:'Front Control Arm Bushings',brand:'SsangYong',car:'Korando',y1:2014,y2:2019,cat:'عفشة وفرامل',cond:'جديدة',price:null,ok:1,alias:'بوش مقص'},
+{id:11,code:'BKR-HY-501',ar:'فانوس خلفي ليد',en:'LED Tail Light',brand:'Hyundai',car:'Tucson',y1:2021,y2:2024,cat:'فوانيس',cond:'استيراد',price:null,ok:1,alias:'فنار خلفي'},
+{id:12,code:'BKR-KI-509',ar:'ردياتير مياه ألومنيوم',en:'Aluminum Radiator',brand:'Kia',car:'Cerato',y1:2010,y2:2013,cat:'موتور وتبريد',cond:'جديدة',price:null,ok:1,alias:'رادياتير'}
+];
+const BR={Hyundai:{ar:'هيونداي',c:'bg-bk-hy',t:'text-bk-hy',hex:'#0055A5'},Kia:{ar:'كيا',c:'bg-bk-kia',t:'text-bk-kia',hex:'#BB162B'},SsangYong:{ar:'سانج يونج',c:'bg-bk-sy',t:'text-bk-sy',hex:'#2E5A44'}};
+const $=id=>document.getElementById(id);
+const uniq=a=>[...new Set(a)];
+const cats=uniq(P.map(p=>p.cat));
+const norm=s=>(s||'').toString().toLowerCase();
+const price=p=>p.price?p.price.toLocaleString('ar-EG')+' ج.م ':'<span class="text-sm text-stone-500">السعر عند التواصل</span>';
+const years=p=>p.y1===p.y2?p.y1:p.y1+'–'+p.y2;
+const waLink=t=>`https://wa.me/${PHONE}?text=${encodeURIComponent(t)}`;
+const prodMsg=p=>`السلام عليكم بكار، عايز أستفسر عن: ${p.ar} (${p.en})\nالسيارة: ${p.brand} ${p.car} ${years(p)}\nكود: ${p.code}\nممكن تأكدولي السعر والتوفر؟`;
+
+// تهيئة
+['dBrand','fBrand','aBrand'].forEach(id=>Object.keys(BR).forEach(b=>$(id).add(new Option(b,b))));
+['dCat','fCat'].forEach(id=>cats.forEach(c=>$(id).add(new Option(c,c))));
+$('wa1').href=waLink('السلام عليكم بكار، عندي استفسار');$('wa2').href=`https://wa.me/${PHONE2}?text=${encodeURIComponent('السلام عليكم بكار، عندي استفسار')}`;$('waFloat').href=$('wa1').href;
+$('brandCards').innerHTML=Object.keys(BR).map(b=>{const n=P.filter(p=>p.brand===b).length;return `
+<button onclick="pickBrand('${b}')" class="card text-right overflow-hidden hover:shadow-lg transition">
+ <div class="h-1 ${BR[b].c}"></div>
+ <div class="p-4 flex items-center justify-between"><div><p class="font-black text-lg">${b} <span class="text-xs text-stone-400 font-semibold">${BR[b].ar}</span></p>
+ <p class="text-xs text-stone-500 mt-1">${n} صنف • ${uniq(P.filter(p=>p.brand===b).map(p=>p.car)).join(' • ')}</p></div>
+ <span class="w-11 h-11 rounded-xl flex items-center justify-center text-white font-black ${BR[b].c}">${b[0]}</span></div></button>`}).join('');
+
+function pickBrand(b){$('fBrand').value=b;$('dBrand').value=b;fillModels();renderCatalog();$('catalog').scrollIntoView({behavior:'smooth'})}
+
+// البحث + اقتراحات
+function haystack(p){return norm([p.ar,p.en,p.code,p.brand,BR[p.brand].ar,p.car,p.cat,p.alias,p.cond].join(' '))}
+function onSearch(){
+ const v=norm($('q').value).trim();const s=$('sugg');
+ renderCatalog();
+ if(!v){s.classList.add('hidden');return}
+ const m=P.filter(p=>haystack(p).includes(v)).slice(0,5);
+ s.innerHTML=m.length?m.map(p=>`<button class="block w-full text-right px-4 py-2 hover:bg-stone-100" onclick="openModal(${p.id});$('sugg').classList.add('hidden')"><b>${p.ar}</b> <span class="text-xs text-stone-500">${p.brand} ${p.car} • ${p.code}</span></button>`).join(''):
+  `<a href="#ask" onclick="setMode('missing');$('sugg').classList.add('hidden')" class="block px-4 py-2 text-stone-600">مفيش نتيجة — اطلب القطعة من بكار ←</a>`;
+ s.classList.remove('hidden');
+}
+document.addEventListener('click',e=>{if(!e.target.closest('#q,#sugg'))$('sugg').classList.add('hidden')});
+
+// كارت منتج
+function card(p){const b=BR[p.brand];return `
+<article class="card overflow-hidden flex flex-col justify-between">
+ <div class="h-1 ${b.c}"></div>
+ <div class="p-4 space-y-2 cursor-pointer" onclick="openModal(${p.id})">
+  <div class="flex justify-between items-center text-[11px] font-bold"><span class="${b.t}">${p.brand}</span><span class="bg-stone-100 rounded px-2 py-0.5">${p.cond}</span></div>
+  <h3 class="font-black leading-snug">${p.ar}</h3>
+  <p class="text-xs text-stone-500" dir="ltr" style="text-align:right">${p.en}</p>
+  <p class="text-xs text-stone-600">🚘 ${p.brand} ${p.car} ${years(p)}</p>
+  <p class="text-[11px] font-mono text-stone-400">${p.code}</p>
+ </div>
+ <div class="px-4 pb-4 flex items-center justify-between gap-2"><span class="font-black">${price(p)}</span>
+  <a target="_blank" rel="noopener" href="${waLink(prodMsg(p))}" class="wa !px-3 !py-2 !text-xs">اسأل</a></div>
+</article>`}
+
+function renderCatalog(){
+ const v=norm($('q').value).trim(),b=$('fBrand').value,c=$('fCat').value,d=$('fCond').value,s=$('fSort').value;
+ let r=P.filter(p=>(!b||p.brand===b)&&(!c||p.cat===c)&&(!d||p.cond===d)&&(!v||haystack(p).includes(v)));
+ if(s==='p1')r.sort((x,y)=>(x.price??9e9)-(y.price??9e9));
+ if(s==='p2')r.sort((x,y)=>(y.price??-1)-(x.price??-1));
+ if(s==='n')r.sort((x,y)=>x.ar.localeCompare(y.ar,'ar'));
+ $('cnt').textContent=r.length;$('grid').innerHTML=r.map(card).join('');
+ $('empty').classList.toggle('hidden',r.length>0);
+}
+
+// Smart Discovery
+function fillModels(){
+ const b=$('dBrand').value,m=$('dModel');m.innerHTML='<option value="">الموديل</option>';
+ uniq(P.filter(p=>!b||p.brand===b).map(p=>p.car)).forEach(c=>m.add(new Option(c,c)));renderDiscover();
+}
+function renderDiscover(){
+ const b=$('dBrand').value,m=$('dModel').value,y=+$('dYear').value,c=$('dCat').value,o=$('dOut');
+ if(!b&&!m&&!y&&!c){o.innerHTML='<p class="text-xs text-stone-400 col-span-full">اختار الماركة أو الموديل عشان نعرض القطع.</p>';return}
+ const r=P.filter(p=>p.ok&&(!b||p.brand===b)&&(!m||p.car===m)&&(!y||(y>=p.y1&&y<=p.y2))&&(!c||p.cat===c));
+ o.innerHTML=r.length?r.map(card).join(''):`<div class="col-span-full text-sm text-stone-600">مفيش توافق مؤكد للاختيار ده. <a href="#ask" onclick="setMode('ask')" class="text-bk-red font-bold underline">اطلب مساعدة بكار</a></div>`;
+}
+
+// نافذة القطعة
+function openModal(id){
+ const p=P.find(x=>x.id===id),b=BR[p.brand];
+ $('mBar').style.background=b.hex;
+ const rel=P.filter(x=>x.id!==id&&(x.car===p.car||x.cat===p.cat&&x.brand===p.brand)).slice(0,3);
+ $('mBody').innerHTML=`
+ <div class="flex justify-between items-start gap-3"><div><span class="text-xs font-bold ${b.t}">${p.brand}</span>
+  <h3 class="text-xl font-black">${p.ar}</h3><p class="text-sm text-stone-500" dir="ltr" style="text-align:right">${p.en}</p></div>
+  <button onclick="closeModal()" class="bg-stone-100 w-8 h-8 rounded-lg font-bold">✕</button></div>
+ <div class="bg-bk-bg border border-bk-line rounded-xl p-4 text-xs space-y-1 text-stone-600">
+  <p>رقم القطعة (Part No): <b class="font-mono text-stone-800">${p.code}</b></p>
+  <p>السيارة: <b class="text-stone-800">${p.brand} ${p.car} ${years(p)}</b> ${p.ok?'':'<span class="text-amber-700">(التوافق غير مؤكد)</span>'}</p>
+  <p>القسم: <b class="text-stone-800">${p.cat}</b> • الحالة: <b class="text-stone-800">${p.cond}</b></p>
+  <p>التوفر: <b class="text-stone-800">يُؤكَّد عند التواصل</b></p>
+  ${p.cond==='استيراد'?'<p class="text-amber-700">قطعة استيراد: ممكن يكون فيها خدوش أو عيوب بسيطة — اسأل عن حالتها الفعلية.</p>':''}
+  <p class="text-stone-400">لا توجد صورة فعلية للقطعة بعد، والوصف الفني يُضاف من بيانات المخزون.</p></div>
+ <div class="flex items-center justify-between pt-1"><span class="text-xl font-black text-bk-red">${price(p)}</span>
+  <a target="_blank" rel="noopener" href="${waLink(prodMsg(p))}" class="wa">💬 اسأل عن القطعة</a></div>
+ ${rel.length?`<div class="pt-2 border-t border-bk-line"><p class="text-xs font-bold mb-2">منتجات ذات صلة</p><div class="space-y-1">${rel.map(x=>`<button onclick="openModal(${x.id})" class="block w-full text-right text-xs bg-bk-bg rounded-lg px-3 py-2">${x.ar} — ${x.brand} ${x.car} ${years(x)}</button>`).join('')}</div></div>`:''}`;
+ $('modal').classList.replace('hidden','flex');
+}
+function closeModal(){$('modal').classList.replace('flex','hidden')}
+
+// Ask Bakkar / Missing Parts (بدون تخزين — يولّد رقم مرجعي ورسالة واتساب)
+let mode='ask';
+function setMode(m){mode=m;
+ $('mAsk').className='px-4 py-2 rounded-lg '+(m==='ask'?'bg-bk-dark text-white':'bg-bk-bg');
+ $('mMiss').className='px-4 py-2 rounded-lg '+(m==='missing'?'bg-bk-dark text-white':'bg-bk-bg');
+ $('aDesc').placeholder=m==='ask'?'اوصف العطل أو القطعة المطلوبة...':'اكتب اسم القطعة أو وصفها اللي ملقيتهاش...';
+}
+function previewImg(i){const f=i.files[0],im=$('aPrev');if(!f)return;im.src=URL.createObjectURL(f);im.classList.remove('hidden')}
+async function submitAsk(){
+ const n=$('aName').value.trim(),ph=$('aPhone').value.trim(),d=$('aDesc').value.trim();
+ if(!n||!ph||!d){alert('من فضلك اكتب الوصف والاسم ورقم الموبايل');return}
+ const ref=(mode==='ask'?'ASK-':'MISS-')+Math.floor(10000+Math.random()*90000);
+ const msg=`*${mode==='ask'?'استفسار':'طلب قطعة غير موجودة'}* — رقم مرجعي: ${ref}\nالاسم: ${n}\nالموبايل: ${ph}\nالسيارة: ${$('aBrand').value} ${$('aModel').value} ${$('aYear').value}\nرقم القطعة: ${$('aPart').value||'—'}\nالوصف: ${d}`;
+ const file=$('aImg').files[0];
+ $('aDone').innerHTML=`<p class="font-bold">تم تجهيز طلبك ✅ الرقم المرجعي: <span class="font-mono">${ref}</span></p>
+ <p class="text-xs text-stone-600">جاري فتح مشاركة الطلب...</p>`;
+ $('aDone').classList.remove('hidden');
+
+ // مشاركة الرسالة والصورة معًا من خلال قائمة المشاركة التي يدعمها الجهاز والمتصفح.
+ if(file && navigator.share && navigator.canShare){
+  try{
+   const shareData={title:'طلب إلى بكار',text:msg,files:[file]};
+   if(navigator.canShare({files:[file]})){
+    await navigator.share(shareData);
+    $('aDone').innerHTML=`<p class="font-bold">تم فتح مشاركة الطلب ✅ الرقم المرجعي: <span class="font-mono">${ref}</span></p><p class="text-xs text-stone-600">اختار WhatsApp من قائمة المشاركة لإرسال الرسالة والصورة معًا.</p>`;
+    return;
+   }
+  }catch(err){
+   if(err && err.name==='AbortError') return;
+  }
+ }
+
+ // احتياطي للمتصفحات التي لا تدعم مشاركة الملفات.
+ $('aDone').innerHTML=`<p class="font-bold">تم تجهيز طلبك ✅ الرقم المرجعي: <span class="font-mono">${ref}</span></p>
+ <p class="text-xs text-stone-600">المتصفح لا يدعم إرفاق الصورة تلقائيًا. بعد فتح واتساب، اضغط على علامة المرفقات واختر الصورة من جهازك.</p>
+ <a target="_blank" rel="noopener" href="${waLink(msg)}" class="wa inline-block">💬 أرسل الرسالة عبر واتساب</a>`;
+}
+setMode('ask');renderCatalog();renderDiscover();
+</script>
+</body>
+</html>
