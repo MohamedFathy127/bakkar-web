@@ -291,23 +291,24 @@ async function submitAsk(){
  <p class="text-xs text-stone-600">جاري فتح مشاركة الطلب...</p>`;
  $('aDone').classList.remove('hidden');
 
- // مشاركة الرسالة والصورة معًا من خلال قائمة المشاركة التي يدعمها الجهاز والمتصفح.
- if(file && navigator.share && navigator.canShare){
+ // عند وجود صورة، شارك الصورة والنص في استدعاء واحد كي يصلا كرسالة واحدة.
+ if(file){
+  const shareData={title:'طلب إلى بكار',text:msg,files:[file]};
   try{
-   const shareData={title:'طلب إلى بكار',text:msg,files:[file]};
-   if(navigator.canShare({files:[file]})){
+   if(navigator.share && navigator.canShare && navigator.canShare(shareData)){
     await navigator.share(shareData);
-    $('aDone').innerHTML=`<p class="font-bold">تم فتح مشاركة الطلب ✅ الرقم المرجعي: <span class="font-mono">${ref}</span></p><p class="text-xs text-stone-600">اختار WhatsApp من قائمة المشاركة لإرسال الرسالة والصورة معًا.</p>`;
+    $('aDone').innerHTML=`<p class="font-bold">تم فتح مشاركة الطلب ✅ الرقم المرجعي: <span class="font-mono">${ref}</span></p><p class="text-xs text-stone-600">اختار WhatsApp من قائمة المشاركة. تأكد أن النص والصورة ظاهرين في نفس الرسالة قبل الإرسال.</p>`;
     return;
    }
   }catch(err){
    if(err && err.name==='AbortError') return;
   }
+  $('aDone').innerHTML=`<p class="font-bold">تعذر مشاركة الصورة والنص معًا</p><p class="text-xs text-stone-600">المتصفح أو الجهاز لا يدعم إرسال الصورة والنص كرسالة واحدة. جرّب فتح الموقع من متصفح الهاتف، ثم أعد إرسال الطلب.</p>`;
+  return;
  }
 
- // احتياطي للمتصفحات التي لا تدعم مشاركة الملفات.
+ // بدون صورة، افتح واتساب برسالة الطلب كالمعتاد.
  $('aDone').innerHTML=`<p class="font-bold">تم تجهيز طلبك ✅ الرقم المرجعي: <span class="font-mono">${ref}</span></p>
- <p class="text-xs text-stone-600">المتصفح لا يدعم إرفاق الصورة تلقائيًا. بعد فتح واتساب، اضغط على علامة المرفقات واختر الصورة من جهازك.</p>
  <a target="_blank" rel="noopener" href="${waLink(msg)}" class="wa inline-block">💬 أرسل الرسالة عبر واتساب</a>`;
 }
 setMode('ask');renderCatalog();renderDiscover();
