@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bakkar-web.pages.dev/sitemap.xml
