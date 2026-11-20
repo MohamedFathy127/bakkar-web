@@ -1,0 +1,5 @@
+# Static site: single HTML file + assets at repo root, no package.json,
+# no framework, and nothing to compile (Tailwind/JS load from CDNs).
+# Publish the repo root as-is; no build command or Node version needed.
+[build]
+  publish = "."
