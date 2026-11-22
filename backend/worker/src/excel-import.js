@@ -383,6 +383,53 @@ async function handleExcelImport(request, url, env, session) {
     }, 201);
   }
 
+  const rowEditMatch = path.match(/^\\/api\\/admin\\/imports\\/([0-9a-f-]{36})\\/rows\\/(\\d+)$/i);
+  if (rowEditMatch && method === "PUT") {
+    const origin = request.headers.get("Origin");
+    const fetchSite = request.headers.get("Sec-Fetch-Site");
+    if (!origin || origin !== new URL(request.url).origin || (fetchSite && fetchSite !== "same-origin")) {
+      return reply({ error: "Invalid request origin." }, 403);
+    }
+    const parsed = await readJsonBody(request, 12 * 1024);
+    if (parsed.error) return reply({ error: parsed.error }, 400);
+    const values = parsed.body?.values;
+    if (!values || typeof values !== "object" || Array.isArray(values)) {
+      return reply({ error: "بيانات التعديل غير صالحة." }, 400);
+    }
+    const allowed = new Set(HEADERS);
+    if (Object.keys(values).some(key => !allowed.has(key))) {
+      return reply({ error: "يوجد حقل غير معروف في التعديل." }, 400);
+    }
+    for (const value of Object.values(values)) {
+      if (value !== null && value !== undefined && !["string","number","boolean"].includes(typeof value)) {
+        return reply({ error: "قيم التعديل يجب أن تكون نصوصًا أو أرقامًا بسيطة." }, 400);
+      }
+    }
+    const batchId = rowEditMatch[1];
+    const rowNumber = Number(rowEditMatch[2]);
+    const batch = await env.DB.prepare("SELECT id,status FROM import_batches WHERE id=?").bind(batchId).first();
+    if (!batch) return reply({ error: "دفعة الاستيراد غير موجودة." }, 404);
+    if (batch.status !== "preview") return reply({ error: "لا يمكن تعديل صف بعد اعتماد الدفعة." }, 409);
+    const existing = await env.DB.prepare("SELECT id,raw_json,status FROM import_batch_rows WHERE batch_id=? AND row_number=?")
+      .bind(batchId,rowNumber).first();
+    if (!existing) return reply({ error: "صف الاستيراد غير موجود." }, 404);
+    if (existing.status !== "preview") return reply({ error: "لا يمكن تعديل صف تم اعتماده أو تخطيه." }, 409);
+    const raw = JSON.parse(existing.raw_json);
+    for (const [key,value] of Object.entries(values)) raw[key] = value;
+    const parsedRows = await parseRows(env.DB,[HEADERS,HEADERS.map(header=>raw[header]??null)]);
+    if (!parsedRows.length) return reply({ error: "لا يمكن حفظ صف فارغ بالكامل." }, 400);
+    const updated = parsedRows[0];
+    updated.row_number = rowNumber;
+    await env.DB.prepare(`
+      UPDATE import_batch_rows SET raw_json=?,normalized_json=?,issues_json=?
+      WHERE id=? AND status='preview'
+    `).bind(JSON.stringify(raw),JSON.stringify(updated.item),JSON.stringify(updated.issues),existing.id).run();
+    return reply({
+      row_number: rowNumber, raw, item: updated.item,
+      issues: updated.issues, candidates: updated.candidates, status: "preview",
+    });
+  }
+
   const batchMatch = path.match(/^\/api\/admin\/imports\/([0-9a-f-]{36})$/i);
   if (batchMatch && method === "GET") {
     const batch = await env.DB.prepare("SELECT id,filename,status,total_rows,created_count,updated_count,skipped_count,error_count,created_at,applied_at FROM import_batches WHERE id=?")
