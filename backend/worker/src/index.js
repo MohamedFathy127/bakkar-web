@@ -41,13 +41,75 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <label>مفتاح التهيئة المؤقت</label><input id="setupKey" type="password" autocomplete="off">
 <label>كلمة مرور جديدة (12 حرفًا على الأقل)</label><input id="setupPassword" type="password" autocomplete="new-password">
 <button id="setupBtn">إنشاء حساب المالك</button><div id="setupMsg" class="notice hidden"></div></section>
-<section id="dashboard" class="panel hidden"><h2>مرحبًا <span id="who"></span></h2><p>تم تسجيل الدخول بنجاح. هذه نسخة أولية للوحة الإدارة؛ وظائف تعديل المنتجات وحركات المخزون لم تُفعّل بعد.</p><h3>المنتجات المسجلة</h3><div id="products">جارٍ التحميل...</div></section>
+<section id="dashboard" class="panel hidden">
+<h2>مرحبًا <span id="who"></span></h2>
+<p>إدارة المنتجات والأرصدة وحركة المخزون. أي تعديل هنا يُحفظ في قاعدة البيانات.</p>
+<div id="adminMsg" class="notice hidden"></div>
+<h3>إضافة قطعة</h3>
+<form id="productForm" class="panel">
+<label>اسم القطعة بالعربي *</label><input id="partName" required maxlength="160">
+<label>اسم القطعة بالإنجليزي</label><input id="partNameEn" maxlength="160">
+<label>كود القطعة</label><input id="partCode" maxlength="80">
+<label>الحالة</label><input id="condition" placeholder="جديد / استيراد / مستعمل" maxlength="40">
+<div class="formgrid">
+<div><label>سعر البيع (جنيه)</label><input id="salePrice" type="number" min="0" step="0.01"></div>
+<div><label>سعر الشراء (جنيه)</label><input id="purchasePrice" type="number" min="0" step="0.01"></div>
+</div>
+<h4>توافق السيارة (اختياري)</h4>
+<div class="formgrid">
+<div><label>الماركة</label><select id="brandId"><option value="">اختر الماركة</option></select></div>
+<div><label>الموديل</label><input id="vehicleModel" maxlength="80" placeholder="مثال: Elantra"></div>
+<div><label>من سنة</label><input id="yearFrom" type="number" min="1900" max="2100"></div>
+<div><label>إلى سنة</label><input id="yearTo" type="number" min="1900" max="2100"></div>
+</div>
+<label>حالة التوافق</label><select id="fitmentStatus"><option value="pending">يحتاج تأكيد</option><option value="confirmed">مؤكد</option><option value="unconfirmed">غير مؤكد</option></select>
+<label><input id="isPublic" type="checkbox" style="width:auto"> إظهار القطعة في الموقع العام (يتطلب توافقًا مؤكدًا)</label>
+<button type="submit">حفظ القطعة</button>
+</form>
+<h3>المخازن</h3>
+<form id="locationForm" class="panel">
+<label>اسم المخزن أو مكان التخزين</label><input id="locationName" maxlength="80" required>
+<button type="submit">إضافة مكان تخزين</button>
+<div id="locations" class="muted"></div>
+</form>
+<h3>تسجيل حركة مخزون</h3>
+<form id="movementForm" class="panel">
+<label>القطعة</label><select id="movementProduct" required><option value="">اختر القطعة</option></select>
+<label>المخزن</label><select id="movementLocation" required><option value="">اختر المخزن</option></select>
+<label>نوع الحركة</label><select id="movementType"><option value="in">إضافة للمخزون</option><option value="out">صرف من المخزون</option></select>
+<label>الكمية</label><input id="movementQuantity" type="number" min="1" max="1000000" step="1" required>
+<label>السبب أو الملاحظة</label><input id="movementReason" maxlength="240">
+<label>مرجع (اختياري)</label><input id="movementReference" maxlength="100">
+<button type="submit">تسجيل الحركة</button>
+</form>
+<h3>المنتجات المسجلة</h3><div id="products">جارٍ التحميل...</div>
+<h3>آخر حركات المخزون</h3><div id="movements">جارٍ التحميل...</div>
+</section>
 <script>
 const $=id=>document.getElementById(id);
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{"content-type":"application/json",...(opts.headers||{})},credentials:"same-origin"});const d=await r.json().catch(()=>({error:"استجابة غير مفهومة"}));if(!r.ok)throw Error(d.error||"حدث خطأ");return d}
 function message(id,s){$(id).textContent=s;$(id).classList.remove("hidden")}
 function show(which){["login","setup","dashboard"].forEach(x=>$(x).classList.toggle("hidden",x!==which));$("logout").classList.toggle("hidden",which!=="dashboard")}
-async function refresh(){try{const d=await api("/api/admin/me");$("who").textContent=d.user.email;show("dashboard");const p=await api("/api/admin/products");if(!p.data.length){$("products").textContent="لا توجد منتجات مسجلة حتى الآن."}else{$("products").innerHTML="<table><thead><tr><th>اسم القطعة</th><th>الحالة</th><th>الكمية</th></tr></thead><tbody>"+p.data.map(x=>"<tr><td>"+escapeHtml(x.part_name_ar)+"</td><td>"+escapeHtml(x.condition||"—")+"</td><td>"+Number(x.total_quantity||0)+"</td></tr>").join("")+"</tbody></table>"} }catch(e){show("login")}}
+async function refresh(){try{const d=await api("/api/admin/me");$("who").textContent=d.user.email;show("dashboard");await loadAdmin()}catch(e){show("login")}}
+function egpToPiasters(id){const v=$(id).value;if(v==="")return null;const n=Number(v);return Number.isFinite(n)&&n>=0?Math.round(n*100):undefined}
+async function loadAdmin(){
+ const [p,m,h]=await Promise.all([api("/api/admin/products"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12")]);
+ $("brandId").innerHTML='<option value="">اختر الماركة</option>'+m.brands.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name_ar)+'</option>').join("");
+ $("movementProduct").innerHTML='<option value="">اختر القطعة</option>'+p.data.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.part_name_ar)+'</option>').join("");
+ $("movementLocation").innerHTML='<option value="">اختر المخزن</option>'+m.locations.filter(x=>x.active).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join("");
+ $("locations").textContent=m.locations.length?m.locations.map(x=>x.name+(x.active?"":" (غير نشط)")).join(" • "):"لم تتم إضافة أماكن تخزين بعد.";
+ $("products").innerHTML=p.data.length?'<table><thead><tr><th>القطعة</th><th>الحالة</th><th>الرصيد</th><th>سعر البيع</th><th>إجراء</th></tr></thead><tbody>'+p.data.map(x=>'<tr><td>'+escapeHtml(x.part_name_ar)+'</td><td>'+escapeHtml(x.condition||"—")+'</td><td>'+Number(x.total_quantity||0)+'</td><td>'+(x.sale_price_piasters==null?"—":(Number(x.sale_price_piasters)/100).toFixed(2)+" ج.م")+'</td><td><button class="secondary archiveBtn" data-id="'+escapeHtml(x.id)+'" data-version="'+Number(x.version)+'">أرشفة</button></td></tr>').join("")+'</tbody></table>':"لا توجد منتجات مسجلة حتى الآن.";
+ $("movements").innerHTML=h.data.length?'<table><thead><tr><th>القطعة</th><th>المخزن</th><th>الحركة</th><th>الكمية</th><th>الرصيد بعدها</th></tr></thead><tbody>'+h.data.map(x=>'<tr><td>'+escapeHtml(x.part_name_ar)+'</td><td>'+escapeHtml(x.location_name)+'</td><td>'+({in:"إضافة",out:"صرف",adjustment:"تسوية"}[x.movement_type]||x.movement_type)+'</td><td>'+Number(x.quantity_delta)+'</td><td>'+Number(x.balance_after)+'</td></tr>').join("")+'</tbody></table>':"لا توجد حركات مخزون حتى الآن.";
+ document.querySelectorAll(".archiveBtn").forEach(btn=>btn.onclick=async()=>{if(!confirm("أرشفة القطعة؟ ستختفي من الكتالوج العام مع الاحتفاظ بسجلها."))return;try{await api("/api/admin/products/"+btn.dataset.id,{method:"DELETE",body:JSON.stringify({version:Number(btn.dataset.version)})});message("adminMsg","تمت أرشفة القطعة.");await loadAdmin()}catch(e){message("adminMsg",e.message)}});
+}
+$("productForm").onsubmit=async e=>{e.preventDefault();const fitments=[];if($("brandId").value||$("vehicleModel").value){fitments.push({brand_id:$("brandId").value,model:$("vehicleModel").value,year_from:$("yearFrom").value||null,year_to:$("yearTo").value||null,compatibility_status:$("fitmentStatus").value})}
+ const sale=egpToPiasters("salePrice"),purchase=egpToPiasters("purchasePrice");if(sale===undefined||purchase===undefined){message("adminMsg","راجع الأسعار.");return}
+ try{await api("/api/admin/products",{method:"POST",body:JSON.stringify({part_name_ar:$("partName").value,part_name_en:$("partNameEn").value,part_code:$("partCode").value,condition:$("condition").value,sale_price_piasters:sale,purchase_price_piasters:purchase,fitments,is_public:$("isPublic").checked})});$("productForm").reset();message("adminMsg","تم حفظ القطعة.");await loadAdmin()}catch(e){message("adminMsg",e.message)}
+};
+$("locationForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/admin/locations",{method:"POST",body:JSON.stringify({name:$("locationName").value})});$("locationForm").reset();message("adminMsg","تمت إضافة مكان التخزين.");await loadAdmin()}catch(e){message("adminMsg",e.message)}};
+$("movementForm").onsubmit=async e=>{e.preventDefault();const q=Number($("movementQuantity").value);if(!Number.isSafeInteger(q)||q<1){message("adminMsg","أدخل كمية صحيحة.");return}
+ const type=$("movementType").value;try{await api("/api/admin/stock-movements",{method:"POST",body:JSON.stringify({product_id:$("movementProduct").value,location_id:$("movementLocation").value,movement_type:type,quantity_delta:type==="out"?-q:q,reason:$("movementReason").value,reference:$("movementReference").value})});$("movementForm").reset();message("adminMsg","تم تسجيل حركة المخزون.");await loadAdmin()}catch(e){message("adminMsg",e.message)}
+};
 function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 $("loginBtn").onclick=async()=>{try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});$("password").value="";await refresh()}catch(e){message("loginMsg",e.message)}};
 $("setupBtn").onclick=async()=>{try{await api("/api/admin/setup",{method:"POST",body:JSON.stringify({email:$("setupEmail").value,setup_key:$("setupKey").value,password:$("setupPassword").value})});$("setupKey").value="";$("setupPassword").value="";await refresh()}catch(e){message("setupMsg",e.message)}};
