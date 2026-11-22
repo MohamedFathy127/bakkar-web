@@ -406,7 +406,7 @@ async function handleExcelImport(request, url, env, session) {
       }, 409);
     }
     const lockToken = crypto.randomUUID();
-    const lockExpiry = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+    const lockExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString();
     const lock = await env.DB.prepare(`
       UPDATE import_batches SET apply_token=?, apply_lock_expires_at=?
       WHERE id=? AND status='preview'
