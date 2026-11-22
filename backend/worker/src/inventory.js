@@ -345,43 +345,61 @@ async function handleInventoryAdmin(request, url, env, session) {
         reason === null || reference === null) {
       return reply({ error: "راجع نوع الحركة والكمية والمخزن." }, 400);
     }
+
     const movementId = crypto.randomUUID();
-    const groupId = crypto.randomUUID();
     const now = new Date().toISOString();
     try {
       const results = await env.DB.batch([
         env.DB.prepare(`
-          INSERT INTO inventory_balances(product_id,location_id,quantity,updated_at)
-          SELECT ?, ?, ?, ?
-          WHERE EXISTS (SELECT 1 FROM products WHERE id=? AND archived_at IS NULL)
-            AND EXISTS (SELECT 1 FROM locations WHERE id=? AND active=1)
-          ON CONFLICT(product_id,location_id) DO UPDATE SET
-            quantity=inventory_balances.quantity + excluded.quantity,
-            updated_at=excluded.updated_at
-          WHERE inventory_balances.quantity + excluded.quantity >= 0
-        `).bind(productId, locationId, delta, now, productId, locationId),
-        env.DB.prepare(`
           INSERT INTO stock_movements
             (id, product_id, location_id, movement_group_id, movement_type, quantity_delta,
              balance_after, reason, reference, actor_email, created_at)
-          SELECT ?, ?, ?, ?, ?, ?, quantity, ?, ?, ?, ?
-          FROM inventory_balances
-          WHERE product_id=? AND location_id=? AND changes()=1
-        `).bind(movementId, productId, locationId, groupId, type, delta, reason || null,
-          reference || null, session.email, now, productId, locationId),
+          SELECT ?, ?, ?, ?, ?, ?,
+            COALESCE((SELECT quantity FROM inventory_balances
+              WHERE product_id=? AND location_id=?), 0) + ?,
+            ?, ?, ?, ?
+          WHERE EXISTS (SELECT 1 FROM products WHERE id=? AND archived_at IS NULL)
+            AND EXISTS (SELECT 1 FROM locations WHERE id=? AND active=1)
+            AND COALESCE((SELECT quantity FROM inventory_balances
+              WHERE product_id=? AND location_id=?), 0) + ? >= 0
+        `).bind(
+          movementId, productId, locationId, crypto.randomUUID(), type, delta,
+          productId, locationId, delta, reason || null, reference || null, session.email, now,
+          productId, locationId, productId, locationId, delta
+        ),
         env.DB.prepare(`
-          INSERT INTO audit_log(id,entity_type,entity_id,action,after_json,actor_email)
+          INSERT INTO audit_log(id, entity_type, entity_id, action, after_json, actor_email)
           SELECT ?, 'stock_movement', ?, 'created', ?, ?
-          WHERE changes()=1
-        `).bind(crypto.randomUUID(), movementId,
+          WHERE EXISTS (SELECT 1 FROM stock_movements WHERE id=?)
+        `).bind(
+          crypto.randomUUID(), movementId,
           JSON.stringify({ product_id: productId, location_id: locationId, movement_type: type, quantity_delta: delta }),
-          session.email),
+          session.email, movementId
+        ),
       ]);
-      if (!results[0]?.meta?.changes || !results[1]?.meta?.changes) {
-        return reply({ error: "تعذر تنفيذ الحركة: تأكد من وجود القطعة والمخزن وأن الرصيد لا يصبح سالبًا." }, 409);
+
+      if (!results[0]?.meta?.changes) {
+        const [product, location, balance] = await Promise.all([
+          env.DB.prepare("SELECT id FROM products WHERE id=? AND archived_at IS NULL").bind(productId).first(),
+          env.DB.prepare("SELECT id FROM locations WHERE id=? AND active=1").bind(locationId).first(),
+          env.DB.prepare("SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?").bind(productId, locationId).first(),
+        ]);
+        if (!product) return reply({ error: "القطعة غير موجودة أو مؤرشفة." }, 404);
+        if (!location) return reply({ error: "المخزن غير موجود أو غير نشط." }, 404);
+        return reply({
+          error: "الرصيد غير كافٍ لتنفيذ الصرف.",
+          available_quantity: Number(balance?.quantity || 0),
+          requested_quantity: Math.abs(delta),
+        }, 409);
       }
-    } catch {
-      return reply({ error: "تعذر تنفيذ الحركة. راجع القطعة والمخزن والكمية." }, 409);
+    } catch (error) {
+      console.error("stock_movement_failed", {
+        message: String(error?.message || error),
+        movement_type: type,
+        product_id: productId,
+        location_id: locationId,
+      });
+      return reply({ error: "تعذر حفظ حركة المخزون بسبب خطأ في قاعدة البيانات. لم يتم اعتماد الحركة." }, 500);
     }
     return reply({ ok: true, movement_id: movementId }, 201);
   }
