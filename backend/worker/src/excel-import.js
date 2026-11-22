@@ -30,8 +30,10 @@ function textValue(value) {
 function numberValue(value) {
   if (value === null || value === undefined || String(value).trim() === "") return null;
   const normalized = String(value).replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
-  const cleaned = normalized.replace(/[,،]/g, "").replace(/جنيه|ج\\.?م|EGP|LE/gi, "").replace(/[^0-9.+-]/g, "");
-  const parsed = Number(cleaned);
+  const cleaned = normalized.replace(/[,،]/g, "").replace(/[^0-9.+-]/g, "");
+  const match = cleaned.match(/[-+]?\\d+(?:\\.\\d+)?/);
+  if (!match) return undefined;
+  const parsed = Number(match[0]);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 function moneyPiasters(value) {
@@ -48,7 +50,7 @@ function integerValue(value) {
 function yearValue(value) {
   const raw = textValue(value);
   if (!raw || raw === "***" || raw === "—" || raw === "-") return null;
-  const parsed = Number(raw);
+  const parsed = numberValue(raw);
   return Number.isInteger(parsed) && parsed >= 1900 && parsed <= 2100 ? parsed : undefined;
 }
 async function sha256Hex(bytes) {
@@ -121,7 +123,7 @@ async function parseRows(db, rows) {
       if (item.year_to === undefined) item.year_to = null;
     }
     if (item.condition && item.condition.length > 40) { issues.push("الحالة أطول من الحد المسموح؛ تم ترك خانة الحالة فارغة."); item.condition = null; }
-    if (item.part_name_ar && item.part_name_ar.length > 160) issues.push("اسم القطعة أطول من الحد المسموح (160 حرفًا).");
+    if (item.part_name_ar && item.part_name_ar.length > 160) issues.push("اسم القطعة أطول من الحد المسموح (160 حرفًا).");\n    if (item.part_code && item.part_code.length > 80) { issues.push("كود القطعة أطول من الحد المسموح؛ تم تركه فارغًا."); item.part_code = null; }
     if (item.notes && item.notes.length > 2000) { issues.push("الملاحظات أطول من الحد المسموح؛ حُفظ النص الأصلي في بيانات المعاينة فقط."); item.notes = null; }
     if (item.year_from !== null && item.year_to !== null && item.year_to < item.year_from) issues.push("سنة النهاية أقدم من سنة البداية.");
     if (item.condition && item.condition.length > 40) { issues.push("الحالة أطول من الحد المسموح؛ تم ترك خانة الحالة فارغة وحُفظ النص الأصلي في بيانات المعاينة."); item.condition = null; }
@@ -163,11 +165,30 @@ async function handleExcelImport(request, url, env, session) {
     if (!origin || origin !== new URL(request.url).origin || (fetchSite && fetchSite !== "same-origin")) {
       return reply({ error: "Invalid request origin." }, 403);
     }
-    if (Number(request.headers.get("Content-Length") || 0) > MAX_FILE_BYTES + 64 * 1024) {
-      return reply({ error: "حجم الملف أكبر من 5 ميجابايت." }, 413);
-    }
+    const reader = request.body?.getReader();
+    if (!reader) return reply({ error: "ملف Excel مطلوب." }, 400);
+    const chunks = [];
+    let totalBytes = 0;
+    try {
+      while (true) {
+        const part = await reader.read();
+        if (part.done) break;
+        totalBytes += part.value.byteLength;
+        if (totalBytes > MAX_FILE_BYTES + 64 * 1024) {
+          await reader.cancel();
+          return reply({ error: "حجم الملف أكبر من 5 ميجابايت." }, 413);
+        }
+        chunks.push(part.value);
+      }
+    } finally { reader.releaseLock(); }
+    const requestBytes = new Uint8Array(totalBytes);
+    let requestOffset = 0;
+    for (const chunk of chunks) { requestBytes.set(chunk, requestOffset); requestOffset += chunk.byteLength; }
     let form;
-    try { form = await request.formData(); } catch { return reply({ error: "تعذر قراءة ملف Excel." }, 400); }
+    try {
+      const replay = new Request(request.url, { method: "POST", headers: request.headers, body: requestBytes });
+      form = await replay.formData();
+    } catch { return reply({ error: "تعذر قراءة ملف Excel." }, 400); }
     const file = form.get("file");
     if (!file || typeof file.arrayBuffer !== "function") return reply({ error: "اختر ملف Excel أولًا." }, 400);
     const filename = String(file.name || "inventory.xlsx").replace(/[\\/\\0-\\x1f]/g, "_").slice(0, 120);
