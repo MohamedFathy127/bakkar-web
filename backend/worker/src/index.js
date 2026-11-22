@@ -12,7 +12,7 @@ const JSON_HEADERS = {
 };
 
 const SESSION_SECONDS = 60 * 60 * 8;
-const PASSWORD_ITERATIONS = 210000;
+const PASSWORD_ITERATIONS = 100000;
 const ADMIN_HTML = `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
