@@ -168,6 +168,19 @@ function rowFingerprint(item) {
     normalize(item.part_code), normalize(item.location_raw),
   ]);
 }
+function findDuplicateMatchedTargets(rows, rowChoices) {
+  const seen = new Map();
+  for (const row of rows) {
+    const choice = rowChoices.get(row.row_number);
+    if (typeof choice !== "string" || !choice.startsWith("match:")) continue;
+    const item = JSON.parse(row.normalized_json);
+    if (!item.location_id || item.quantity === null) continue;
+    const key = choice.slice(6) + ":" + item.location_id;
+    if (seen.has(key)) return [seen.get(key), row.row_number];
+    seen.set(key, row.row_number);
+  }
+  return null;
+}
 async function parseRows(db, rows) {
   const [brandsResult, locationsResult, productsResult] = await Promise.all([
     db.prepare("SELECT id,name_ar,name_en FROM brands").all(),
@@ -385,20 +398,12 @@ async function handleExcelImport(request, url, env, session) {
     }
     // A single existing product/location may only receive one target quantity
     // from a batch. Otherwise later rows could silently overwrite earlier stock.
-    const matchedTargets = new Map();
-    for (const row of rows) {
-      const choice = rowChoices.get(row.row_number);
-      if (!choice?.startsWith("match:")) continue;
-      const item = JSON.parse(row.normalized_json);
-      if (!item.location_id || item.quantity === null) continue;
-      const key = choice.slice(6) + ":" + item.location_id;
-      if (matchedTargets.has(key)) {
-        return reply({
-          error: "أكثر من صف يستهدف نفس القطعة الموجودة في نفس المخزن. لا يمكن جمع كمياتها تلقائيًا؛ اختر إنشاء سجلات مستقلة عند التأكد أو تخطَّ الصف المتكرر.",
-          row_numbers: [matchedTargets.get(key), row.row_number],
-        }, 409);
-      }
-      matchedTargets.set(key, row.row_number);
+    const conflictingRows = findDuplicateMatchedTargets(rows, rowChoices);
+    if (conflictingRows) {
+      return reply({
+        error: "أكثر من صف يستهدف نفس القطعة الموجودة في نفس المخزن. لا يمكن جمع كمياتها تلقائيًا؛ اختر إنشاء سجلات مستقلة عند التأكد أو تخطَّ الصف المتكرر.",
+        row_numbers: conflictingRows,
+      }, 409);
     }
     const lockToken = crypto.randomUUID();
     const lockExpiry = new Date(Date.now() + 2 * 60 * 1000).toISOString();
@@ -534,5 +539,5 @@ async function handleExcelImport(request, url, env, session) {
 
 export {
   handleExcelImport, normalize, textValue, numberValue, moneyPiasters,
-  integerValue, yearValue, rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned,
+  integerValue, yearValue, rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned, findDuplicateMatchedTargets,
 };
