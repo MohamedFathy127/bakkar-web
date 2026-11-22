@@ -115,16 +115,16 @@ async function parseRows(db, rows) {
     if (item.purchase_price_piasters === undefined) issues.push("سعر الشراء غير صالح.");
     if (item.year_from === undefined || item.year_to === undefined) issues.push("سنوات التوافق غير صالحة؛ راجعها يدويًا.");
     if (item.year_from !== null && item.year_to !== null && item.year_to < item.year_from) issues.push("سنة النهاية أقدم من سنة البداية.");
-    if (item.condition && item.condition.length > 40) issues.push("الحالة أطول من الحد المسموح (40 حرفًا).");
+    if (item.condition && item.condition.length > 40) { issues.push("الحالة أطول من الحد المسموح؛ تم ترك خانة الحالة فارغة وحُفظ النص الأصلي في بيانات المعاينة."); item.condition = null; }
     if (item.part_name_ar && item.part_name_ar.length > 160) issues.push("اسم القطعة أطول من الحد المسموح (160 حرفًا).");
-    if (item.notes && item.notes.length > 2000) issues.push("الملاحظات أطول من الحد المسموح (2000 حرف).");
+    if (item.notes && item.notes.length > 2000) { issues.push("الملاحظات أطول من الحد المسموح؛ حُفظ النص الأصلي في بيانات المعاينة ولم يُنسخ إلى سجل القطعة."); item.notes = null; }
     const brandKey = normalize(item.brand_raw);
     const brand = brands.find(b => normalize(b.name_ar) === brandKey || normalize(b.name_en) === brandKey);
     item.brand_id = brand?.id || null;
     if (item.brand_raw && !brand) issues.push("الماركة غير معروفة في قاعدة البيانات؛ لن يتم إنشاء توافق سيارة تلقائيًا.");
     item.model = item.model_raw && !["***", "—", "-"].includes(item.model_raw) ? item.model_raw : null;
     if (item.model_raw === "***") issues.push("موديل السيارة مكتوب ***؛ تم ترك التوافق غير محدد.");
-    if (item.model && item.model.length > 80) issues.push("موديل السيارة أطول من الحد المسموح (80 حرفًا).");
+    if (item.model && item.model.length > 80) { issues.push("موديل السيارة أطول من الحد المسموح؛ تم ترك التوافق غير محدد."); item.model = null; }
     if (item.model && !item.brand_id) issues.push("يوجد موديل بدون ماركة معروفة؛ لم يتم إنشاء توافق سيارة.");
     const locationKey = normalize(item.location_raw);
     const location = locations.find(l => l.active && normalize(l.name) === locationKey);
@@ -297,17 +297,23 @@ async function handleExcelImport(request, url, env, session) {
         }
       }
       if (item.location_id && item.quantity !== null) {
-        const current = await env.DB.prepare("SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?")
-          .bind(productId, item.location_id).first();
-        const delta = item.quantity - Number(current?.quantity || 0);
-        if (delta !== 0) {
-          statements.push(env.DB.prepare(`
-            INSERT INTO stock_movements(id,product_id,location_id,movement_group_id,movement_type,quantity_delta,balance_after,reason,reference,actor_email,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?)
-          `).bind(crypto.randomUUID(), productId, item.location_id, crypto.randomUUID(),
-            delta > 0 ? "in" : "adjustment", delta, item.quantity,
-            "تسوية الرصيد حسب ملف Excel بعد اعتماد المالك", batchId + ":" + row.row_number, session.email, now));
-        }
+        statements.push(env.DB.prepare(`
+          INSERT INTO stock_movements
+            (id,product_id,location_id,movement_group_id,movement_type,quantity_delta,balance_after,reason,reference,actor_email,created_at)
+          SELECT ?,?,?,?,
+            CASE WHEN ? > COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0)
+              THEN 'in' ELSE 'adjustment' END,
+            ? - COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0),
+            ?,?,?,?,?,?
+          WHERE ? <> COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0)
+        `).bind(
+          crypto.randomUUID(), productId, item.location_id, crypto.randomUUID(),
+          item.quantity, productId, item.location_id,
+          item.quantity, productId, item.location_id,
+          item.quantity, "تسوية الرصيد حسب ملف Excel بعد اعتماد المالك",
+          batchId + ":" + row.row_number, session.email, now,
+          item.quantity, productId, item.location_id
+        ));
       }
       statements.push(env.DB.prepare(`
         INSERT INTO audit_log(id,entity_type,entity_id,action,after_json,actor_email,created_at)
