@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/excel-import
+      - feature/inventory-management
   pull_request:
     branches:
       - main
