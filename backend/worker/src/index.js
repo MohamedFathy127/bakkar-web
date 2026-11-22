@@ -204,15 +204,20 @@ async function loadImportBatch(batchId){
 $("previewExcelBtn").onclick=async()=>{
  const file=$("excelFile").files?.[0];if(!file){importMessage("اختر ملف XLSX أولًا.");return}
  try{
-  $("previewExcelBtn").disabled=true;importMessage("جارٍ رفع الملف وقراءة الصفوف...");
-  const body=new FormData();body.append("file",file,file.name);
-  const response=await fetch("/api/admin/imports/preview",{method:"POST",body,credentials:"same-origin"});
-  const data=await response.json().catch(()=>({error:"استجابة غير مفهومة"}));
-  if(!response.ok){if(data.existing_batch?.id){await loadImportBatch(data.existing_batch.id);importMessage(data.error+" تم فتح المعاينة السابقة.");return}throw Error(data.error||"تعذر إنشاء المعاينة")}
+  $("previewExcelBtn").disabled=true;importMessage("جارٍ قراءة ملف Excel محليًا...");
+  if(!/\\.xlsx$/i.test(file.name)||file.size<4||file.size>5*1024*1024)throw Error("اختر ملف XLSX لا يتجاوز 5 ميجابايت.");
+  const XLSX=await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+  const workbook=XLSX.read(await file.arrayBuffer(),{type:"array",cellFormula:false,cellHTML:false,cellStyles:false,bookVBA:false});
+  const sheetName=workbook.SheetNames?.[0];if(!sheetName)throw Error("الملف لا يحتوي على ورقة عمل.");
+  const rows=XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,raw:false,defval:null,blankrows:false});
+  if(!rows.length)throw Error("ورقة العمل فارغة.");
+  const data=await api("/api/admin/imports/preview",{method:"POST",body:JSON.stringify({filename:file.name,rows})});
   currentImportBatchId=data.batch_id;
   renderImportRows(data.rows,{filename:data.filename,total_rows:data.total_rows,status:"preview"});
-  importMessage("تمت المعاينة دون تعديل المنتجات أو الأرصدة. راجع التحذيرات واختر قرارًا لكل صف.");
- }catch(e){importMessage(e.message)}finally{$("previewExcelBtn").disabled=false}
+  importMessage("تمت قراءة الملف وإنشاء المعاينة دون تعديل المنتجات أو الأرصدة. راجع التحذيرات واختر قرارًا لكل صف.");
+ }catch(e){
+  if(e.data?.existing_batch?.id){try{await loadImportBatch(e.data.existing_batch.id);importMessage(e.message+" تم فتح المعاينة السابقة.");}catch(inner){importMessage(inner.message)}}else importMessage(e.message)
+ }finally{$("previewExcelBtn").disabled=false}
 };
 $("resumeExcelBtn").onclick=async()=>{
  const id=prompt("أدخل رقم دفعة المعاينة المحفوظة:");if(!id)return;
@@ -579,7 +584,7 @@ export default {
     try {
       if (url.pathname === "/admin" && request.method === "GET") return new Response(ADMIN_HTML, {
         headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store",
-          "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+          "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://cdn.sheetjs.com; connect-src 'self' https://cdn.sheetjs.com; base-uri 'none'; frame-ancestors 'none'",
           "x-frame-options": "DENY", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" }
       });
       if (url.pathname === "/api/health" && request.method === "GET") {
