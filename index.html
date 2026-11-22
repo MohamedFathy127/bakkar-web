@@ -274,7 +274,7 @@ function pickBrand(b){$('fBrand').value=b;$('dBrand').value=b;fillModels();rende
 // البحث + اقتراحات من الكتالوج المنشور
 function haystack(p){return norm([p.ar,p.en,p.code,p.brand,p.brandAr,p.car,p.cat,p.cond,...(p.fitments||[]).flatMap(f=>[f.brand,f.brandAr,f.model])].join(' '))}
 function catalogFilters(){return {q:$('q').value.trim(),brand:$('fBrand').value,category:$('fCat').value,condition:$('fCond').value}}
-function catalogSort(){return ({p1:'price_asc',p2:'price_desc',n:'name'})[$('fSort').value]||'id'}
+function catalogSort(){return ({n:'name'})[$('fSort').value]||'id'}
 function drawCatalog(){
  $('grid').innerHTML=P.map(card).join('');$('cnt').textContent=P.length;
  $('empty').classList.toggle('hidden',P.length>0);$('loadMoreCatalog').classList.toggle('hidden',!catalogHasMore);
