@@ -42,6 +42,9 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 .bar-row{margin:13px 0}.bar-meta{display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:7px}.bar-track{height:9px;background:#eee8e1;border-radius:99px;overflow:hidden}.bar-fill{height:100%;background:#8c2727;border-radius:99px}
 .section-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .action-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.action-row button{margin-top:8px}
+.excel-edit{border-top:1px solid #e9e1d7;margin-top:14px;padding-top:12px}
+.excel-edit textarea{width:100%;padding:12px;border:1px solid #d7d1c8;border-radius:9px;font:inherit}
+
 @media(max-width:640px){main{margin:12px auto;padding:10px}.panel{padding:16px}th,td{font-size:12px;padding:8px}}
 
 </style></head><body><main>
@@ -185,24 +188,37 @@ async function refreshAvailableStock(){
 function egpToPiasters(id){const v=$(id).value;if(v==="")return null;const n=Number(v);return Number.isFinite(n)&&n>=0?Math.round(n*100):undefined}
 let currentImportBatchId=null,currentImportRows=[];
 function importMessage(value){$("excelImportMsg").textContent=value;$("excelImportMsg").classList.remove("hidden")}
+let renderedImportBatchId=null;
 function renderImportRows(rows,batch){
+ const sameBatch=Boolean(batch?.id&&batch.id===renderedImportBatchId);
+ const previousDecisions={};
+ if(sameBatch)document.querySelectorAll(".excel-decision").forEach(el=>{previousDecisions[el.dataset.row]=el.value});
  currentImportRows=rows||[];
  $("excelImportSummary").textContent=batch?("الملف: "+batch.filename+" — إجمالي الصفوف: "+batch.total_rows+" — الحالة: "+batch.status):"";
  $("excelImportRows").innerHTML=currentImportRows.map(r=>{
-  const item=r.item||{},issues=r.issues||[],candidates=r.candidates||[];
+  const item=r.item||{},raw=r.raw||{},issues=r.issues||[],candidates=r.candidates||[];
   const exactDuplicate=issues.some(x=>x.startsWith("يوجد صف مطابق تمامًا"));
   const invalid=!item.part_name_ar||item.part_name_ar.length>160||(item.year_from!==null&&item.year_to!==null&&item.year_to<item.year_from);
   const needsReview=issues.length>0||candidates.length>0||invalid;
   const locked=exactDuplicate||invalid||r.status!=="preview";
   const choices=locked?'<option value="skip">تخطي هذا الصف</option>':
    '<option value="">اختر قرارًا لهذا الصف</option><option value="create">إنشاء قطعة جديدة</option>'+
-   candidates.map(c=>{
-    const fitments=(c.fitments||[]).map(f=>[f.brand_name_ar,f.model,f.year_from??"؟",f.year_to??"؟"].join(" / ")).join("، ")||"لا يوجد توافق مسجل";
-    return '<option value="match:'+escapeHtml(c.id)+'">مطابقة وتحديث: '+escapeHtml(c.part_name_ar)+' — '+escapeHtml(c.condition||"الحالة غير محددة")+' — بيع '+(c.sale_price_piasters==null?"—":(Number(c.sale_price_piasters)/100).toFixed(2))+' ج.م — شراء '+(c.purchase_price_piasters==null?"—":(Number(c.purchase_price_piasters)/100).toFixed(2))+' ج.م — '+escapeHtml(fitments)+' — رصيد '+Number(c.total_quantity||0)+'</option>';
+   candidates.map(candidate=>{
+    const fitments=(candidate.fitments||[]).map(f=>[f.brand_name_ar,f.model,f.year_from??"؟",f.year_to??"؟"].join(" / ")).join("، ")||"لا يوجد توافق مسجل";
+    return '<option value="match:'+escapeHtml(candidate.id)+'">مطابقة وتحديث: '+escapeHtml(candidate.part_name_ar)+' — '+escapeHtml(candidate.condition||"الحالة غير محددة")+' — بيع '+(candidate.sale_price_piasters==null?"—":(Number(candidate.sale_price_piasters)/100).toFixed(2))+' ج.م — شراء '+(candidate.purchase_price_piasters==null?"—":(Number(candidate.purchase_price_piasters)/100).toFixed(2))+' ج.م — '+escapeHtml(fitments)+' — رصيد '+Number(candidate.total_quantity||0)+'</option>';
    }).join("")+
    '<option value="skip">تخطي هذا الصف</option>';
   const warning=issues.length?issues.join(" • "):"لا توجد تحذيرات";
   const state=r.status==="preview"?"بانتظار قرارك":r.status==="applied"?"تم الاعتماد":r.status==="skipped"?"تم التخطي":"تعذر الاعتماد";
+  const field=(header,label)=>'<label>'+label+'<input type="text" data-field="'+escapeHtml(header)+'" value="'+escapeHtml(raw[header]??"")+'"></label>';
+  const editor=r.status==="preview"?'<button type="button" class="secondary editExcelRowBtn" data-row="'+Number(r.row_number)+'">تعديل بيانات الصف / استكمال الناقص</button>'+
+   '<div class="excel-edit hidden" data-edit-row="'+Number(r.row_number)+'"><div class="formgrid">'+
+   field("الماركة","الماركة")+field("اسم القطعة","اسم القطعة")+field("موديل السيارة","موديل السيارة")+
+   field("من سنة","من سنة")+field("إلى سنة","إلى سنة")+field("الكمية","الكمية")+
+   field("سعر البيع (ج.م)","سعر البيع (ج.م)")+field("سعر الشراء (ج.م)","سعر الشراء (ج.م)")+
+   field("الحالة","الحالة")+field("مكان التخزين","مكان التخزين")+field("كود القطعة","كود القطعة")+
+   '</div><label>ملاحظات<textarea data-field="ملاحظات" rows="3">'+escapeHtml(raw["ملاحظات"]??"")+'</textarea></label>'+
+   '<button type="button" class="saveExcelRowBtn" data-row="'+Number(r.row_number)+'">حفظ التعديلات وإعادة الفحص</button></div>':'';
   return '<div class="panel excel-row" data-row="'+Number(r.row_number)+'"><strong>صف '+Number(r.row_number)+' — '+escapeHtml(item.part_name_ar||"اسم القطعة غير موجود")+'</strong>'+
    '<p>الماركة: '+escapeHtml(item.brand_raw||"—")+' | الموديل: '+escapeHtml(item.model_raw||"—")+' | السنوات: '+escapeHtml(item.year_from??"—")+' إلى '+escapeHtml(item.year_to??"—")+'</p>'+
    '<p>الكمية: '+escapeHtml(item.quantity??"—")+' | المخزن: '+escapeHtml(item.location_raw||"غير محدد")+' | الكود: '+escapeHtml(item.part_code||"—")+'</p>'+
@@ -210,8 +226,28 @@ function renderImportRows(rows,batch){
    '<p>ملاحظات الملف: '+escapeHtml(item.notes||"لا توجد")+'</p>'+
    '<p>مراجعة: '+escapeHtml(warning)+' | الحالة: '+escapeHtml(state)+'</p>'+
    (r.status==="preview"&&needsReview?'<label>مطلوب مراجعة — اختر القرار</label><select class="excel-decision" data-row="'+Number(r.row_number)+'">'+choices+'</select>':
-    r.status==="preview"?'<p class="success">سليم — سيتم إدراجه تلقائيًا عند الاعتماد</p>':'')+'</div>';
+    r.status==="preview"?'<p class="success">سليم — سيتم إدراجه تلقائيًا عند الاعتماد</p>':'')+editor+'</div>';
  }).join("");
+ if(sameBatch)document.querySelectorAll(".excel-decision").forEach(el=>{const old=previousDecisions[el.dataset.row];if(old&&[...el.options].some(option=>option.value===old))el.value=old});
+ renderedImportBatchId=batch?.id||null;
+ document.querySelectorAll(".editExcelRowBtn").forEach(btn=>btn.onclick=()=>{
+  const editor=document.querySelector('.excel-edit[data-edit-row="'+Number(btn.dataset.row)+'"]');
+  if(editor)editor.classList.toggle("hidden");
+ });
+ document.querySelectorAll(".saveExcelRowBtn").forEach(btn=>btn.onclick=async()=>{
+  const rowNumber=Number(btn.dataset.row);
+  const editor=document.querySelector('.excel-edit[data-edit-row="'+rowNumber+'"]');
+  if(!editor)return;
+  const values={};
+  editor.querySelectorAll("[data-field]").forEach(input=>{values[input.dataset.field]=input.value});
+  try{
+   btn.disabled=true;btn.textContent="جارٍ إعادة فحص الصف...";
+   await api("/api/admin/imports/"+encodeURIComponent(currentImportBatchId)+"/rows/"+rowNumber,{method:"PUT",body:JSON.stringify({values})});
+   await loadImportBatch(currentImportBatchId);
+   importMessage("تم حفظ التعديلات وإعادة فحص الصف. راجع التحذيرات وقرار المطابقة من جديد.");
+  }catch(e){importMessage(e.message)}
+  finally{btn.disabled=false;btn.textContent="حفظ التعديلات وإعادة الفحص"}
+ });
  $("applyExcelBtn").classList.toggle("hidden",!currentImportBatchId||!currentImportRows.some(r=>r.status==="preview"));
 }
 async function loadImportBatch(batchId){
@@ -232,7 +268,7 @@ $("previewExcelBtn").onclick=async()=>{
   if(!rows.length)throw Error("ورقة العمل فارغة.");
   const data=await api("/api/admin/imports/preview",{method:"POST",body:JSON.stringify({filename:file.name,rows})});
   currentImportBatchId=data.batch_id;
-  renderImportRows(data.rows,{filename:data.filename,total_rows:data.total_rows,status:"preview"});
+  renderImportRows(data.rows,{id:data.batch_id,filename:data.filename,total_rows:data.total_rows,status:"preview"});
   importMessage(data.previous_import
    ?"تنبيه: هذا الملف سبق استيراده بتاريخ "+new Date(data.previous_import.created_at).toLocaleString("ar-EG")+". تمت مقارنة محتواه وإنشاء معاينة مزامنة جديدة؛ راجع الفروق قبل الاعتماد."
    :"تمت قراءة الملف وإنشاء المعاينة دون تعديل المنتجات أو الأرصدة. راجع التحذيرات واختر قرارًا لكل صف.");
