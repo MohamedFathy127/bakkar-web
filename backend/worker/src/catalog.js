@@ -128,6 +128,7 @@ async function handlePublicCatalog(url, env) {
         AND (? = '' OR COALESCE(pc.condition,'') = ?)
         AND (? = '' OR pc.vehicle_model = ?)
         AND (? IS NULL OR (COALESCE(pc.year_from,1900) <= ? AND COALESCE(pc.year_to,2100) >= ?))
+        AND pc.sale_price_piasters IS NOT NULL
       GROUP BY pc.product_id
     ), catalog AS (
       SELECT pc.product_id,
