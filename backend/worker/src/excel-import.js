@@ -383,7 +383,7 @@ async function handleExcelImport(request, url, env, session) {
     }, 201);
   }
 
-  const rowEditMatch = path.match(/^\\/api\\/admin\\/imports\\/([0-9a-f-]{36})\\/rows\\/(\\d+)$/i);
+  const rowEditMatch = path.match(/^\/api\/admin\/imports\/([0-9a-f-]{36})\/rows\/(\d+)$/i);
   if (rowEditMatch && method === "PUT") {
     const origin = request.headers.get("Origin");
     const fetchSite = request.headers.get("Sec-Fetch-Site");
