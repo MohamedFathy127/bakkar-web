@@ -703,7 +703,7 @@ async function handleAdmin(request, url, env) {
     const backup = {
       format: "bakkar-inventory-backup",
       format_version: 1,
-      schema_version: 8,
+      schema_version: 9,
       exported_at: new Date().toISOString(),
       counts,
       excluded_tables: ["admin_credentials","admin_sessions","login_attempts","login_ip_attempts","staff_accounts"],
