@@ -1,0 +1,19 @@
+{
+  "name": "bakkar-inventory-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types",
+    "dev:test": "wrangler dev --config wrangler.test.jsonc",
+    "deploy:test": "wrangler deploy --config wrangler.test.jsonc"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  }
+}
