@@ -212,6 +212,31 @@ async function handleInventoryAdmin(request, url, env, session) {
   const path = url.pathname;
   const method = request.method;
 
+  if (path === "/api/admin/products/bulk-visibility" && method === "POST") {
+    if (!sameOrigin(request)) return reply({ error: "Invalid request origin." }, 403);
+    const parsed = await bodyJson(request);
+    if (parsed.error) return reply({ error: parsed.error }, 400);
+    const isPublic = parsed.value?.is_public;
+    if (typeof isPublic !== "boolean") return reply({ error: "حدد حالة النشر." }, 400);
+    const excluded = Array.isArray(parsed.value.excluded_ids)
+      ? [...new Set(parsed.value.excluded_ids.filter(id => typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id)))].slice(0, 500)
+      : [];
+    const exclusionSql = excluded.length ? " AND id NOT IN (" + excluded.map(() => "?").join(",") + ")" : "";
+    const eligibilitySql = isPublic
+      ? " AND sale_price_piasters IS NOT NULL AND EXISTS (SELECT 1 FROM product_fitments f WHERE f.product_id=products.id AND f.compatibility_status='confirmed')"
+      : "";
+    const before = await env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE archived_at IS NULL" + exclusionSql + eligibilitySql)
+      .bind(...excluded).first();
+    const now = new Date().toISOString();
+    const update = await env.DB.prepare("UPDATE products SET is_public=?,version=version+1,updated_at=? WHERE archived_at IS NULL" + exclusionSql + eligibilitySql)
+      .bind(isPublic ? 1 : 0, now, ...excluded).run();
+    await env.DB.prepare("INSERT INTO audit_log(id,entity_type,entity_id,action,after_json,actor_email,created_at) VALUES(?, 'products', 'bulk', ?, ?, ?, ?)")
+      .bind(crypto.randomUUID(), "bulk_visibility_" + (isPublic ? "published" : "hidden"),
+        JSON.stringify({ updated: Number(update.meta?.changes || 0), excluded_ids: excluded }), session.email, now).run();
+    const eligibleCount = Number(before?.count || 0);
+    return reply({ ok: true, updated: Number(update.meta?.changes || 0), ineligible: isPublic ? Math.max(0, eligibleCount - Number(update.meta?.changes || 0)) : 0 });
+  }
+
   if (path === "/api/admin/stock-balance" && method === "GET") {
     const productId = url.searchParams.get("product_id") || "";
     const locationId = url.searchParams.get("location_id") || "";
