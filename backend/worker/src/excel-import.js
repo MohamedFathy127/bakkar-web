@@ -54,16 +54,23 @@ function normalize(value) {
 }
 function textValue(value) {
   if (value === null || value === undefined) return null;
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return null;
   const valueText = String(value).trim();
   return valueText === "" ? null : valueText;
 }
 function numberValue(value) {
-  if (value === null || value === undefined || String(value).trim() === "") return null;
-  const normalized = String(value).replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
-  const cleaned = normalized.replace(/[,،]/g, "").replace(/[^0-9.+-]/g, "");
-  const match = cleaned.match(/[-+]?[0-9]+(?:[.][0-9]+)?/);
-  if (!match) return undefined;
-  const parsed = Number(match[0]);
+  if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== "string") return undefined;
+  let cleaned = value.normalize("NFKC")
+    .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+    .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/[٬,،]/g, "")
+    .replace(/٫/g, ".")
+    .replace(/(?:ج\s*\.\s*م|جنيه(?:ات)?|EGP|L\s*\.\s*E|LE)/gi, "")
+    .replace(/\s+/g, "");
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(cleaned)) return undefined;
+  const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 function moneyPiasters(value) {
@@ -90,23 +97,68 @@ async function sha256Hex(bytes) {
 function rowToObject(row) {
   return Object.fromEntries(HEADERS.map((header, index) => [header, row[index] ?? null]));
 }
-async function findCandidates(db, item, cachedProducts = null) {
+async function findCandidates(db, item, cachedProducts = []) {
   if (!item.part_name_ar && !item.part_code) return [];
-  const all = cachedProducts
-    ? { results: cachedProducts }
-    : await db.prepare(`
-      SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-        COALESCE(SUM(ib.quantity),0) AS total_quantity
-      FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
-      WHERE p.archived_at IS NULL
-      GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500
-    `).all();
   const nameKey = normalize(item.part_name_ar);
   const codeKey = normalize(item.part_code);
-  return (all.results || []).filter(p =>
+  const exact = await db.prepare(`
+    SELECT p.id, p.part_name_ar, p.part_code, p.condition,
+      p.sale_price_piasters, p.purchase_price_piasters,
+      COALESCE(SUM(ib.quantity),0) AS total_quantity
+    FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
+    WHERE p.archived_at IS NULL AND (
+      (? <> '' AND lower(trim(p.part_name_ar))=lower(trim(?))) OR
+      (? <> '' AND lower(trim(p.part_code))=lower(trim(?)))
+    )
+    GROUP BY p.id ORDER BY p.updated_at DESC
+  `).bind(item.part_name_ar || "", item.part_name_ar || "", item.part_code || "", item.part_code || "").all();
+  const byId = new Map();
+  for (const product of [...(exact.results || []), ...(cachedProducts || [])]) byId.set(product.id, product);
+  const candidates = [...byId.values()].filter(p =>
     (nameKey && normalize(p.part_name_ar) === nameKey) ||
     (codeKey && normalize(p.part_code) === codeKey)
   ).slice(0, 10);
+  if (!candidates.length) return [];
+  const ids = candidates.map(x => x.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const fitments = await db.prepare(`
+    SELECT f.product_id, f.brand_id, b.name_ar AS brand_name_ar, f.model,
+      f.year_from, f.year_to, f.compatibility_status
+    FROM product_fitments f JOIN brands b ON b.id=f.brand_id
+    WHERE f.product_id IN (${placeholders})
+    ORDER BY f.product_id, b.name_ar, f.model
+  `).bind(...ids).all();
+  const byProduct = new Map();
+  for (const fitment of fitments.results || []) {
+    if (!byProduct.has(fitment.product_id)) byProduct.set(fitment.product_id, []);
+    byProduct.get(fitment.product_id).push(fitment);
+  }
+  return candidates.map(x => ({ ...x, fitments: byProduct.get(x.id) || [] }));
+}
+function likelyBrandModelMismatch(brand, model) {
+  if (!brand || !model) return false;
+  const brandName = normalize(brand.name_en || brand.name_ar);
+  const modelName = normalize(model);
+  const ssangyongModels = new Set(["اكتيون", "actyon", "action", "كايرون", "kyron", "كوراندو", "korando", "ريكسون", "rexton"]);
+  const isHyundaiOrKia = brandName === "hyundai" || brandName === "kia" || brandName === "كيا" || brandName === "هيونداي";
+  return isHyundaiOrKia && ssangyongModels.has(modelName);
+}
+function otherLocationsMentioned(notes, locations, selectedLocationId) {
+  const noteKey = normalize(notes);
+  if (!noteKey) return [];
+  return locations.filter(location => {
+    if (location.id === selectedLocationId) return false;
+    const full = normalize(location.name);
+    const short = full.replace(/^(مخزن|مخزون)/, "");
+    return (full.length >= 4 && noteKey.includes(full)) || (short.length >= 3 && noteKey.includes(short));
+  });
+}
+function rowFingerprint(item) {
+  return JSON.stringify([
+    normalize(item.brand_raw), normalize(item.part_name_ar), normalize(item.model_raw),
+    item.year_from ?? null, item.year_to ?? null, normalize(item.condition),
+    normalize(item.part_code), normalize(item.location_raw),
+  ]);
 }
 async function parseRows(db, rows) {
   const [brandsResult, locationsResult, productsResult] = await Promise.all([
@@ -114,6 +166,7 @@ async function parseRows(db, rows) {
     db.prepare("SELECT id,name,active FROM locations").all(),
     db.prepare(`
       SELECT p.id, p.part_name_ar, p.part_code, p.condition,
+        p.sale_price_piasters, p.purchase_price_piasters,
         COALESCE(SUM(ib.quantity),0) AS total_quantity
       FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
       WHERE p.archived_at IS NULL
@@ -164,28 +217,31 @@ async function parseRows(db, rows) {
     if (item.model_raw === "***") issues.push("موديل السيارة مكتوب ***؛ تم ترك التوافق غير محدد.");
     if (item.model && item.model.length > 80) { issues.push("موديل السيارة أطول من الحد المسموح؛ تم ترك التوافق غير محدد."); item.model = null; }
     if (item.model && !item.brand_id) issues.push("يوجد موديل بدون ماركة معروفة؛ لم يتم إنشاء توافق سيارة.");
+    if (item.model && likelyBrandModelMismatch(brand, item.model)) {
+      issues.push("الموديل يبدو غير متوافق مع الماركة المحددة؛ راجع الماركة والموديل قبل الاعتماد.");
+    }
     const locationKey = normalize(item.location_raw);
     const location = locations.find(l => l.active && normalize(l.name) === locationKey);
     item.location_id = location?.id || null;
     if (item.location_raw && !location) issues.push("مكان التخزين غير موجود أو غير نشط؛ لن يتم تعديل الرصيد.");
     if (item.quantity === null) issues.push("الكمية فارغة؛ سيتم حفظ القطعة بدون حركة مخزون.");
     if (item.location_raw === null) issues.push("مكان التخزين فارغ؛ سيتم حفظ القطعة بدون حركة مخزون.");
-    if (item.part_code === null) issues.push("كود القطعة غير مسجل.");
+    if (item.part_code === null) issues.push("كود القطعة غير مسجل؛ لم يتم إنشاء كود تلقائي.");
+    const otherLocations = otherLocationsMentioned(item.notes, locations, item.location_id);
+    if (otherLocations.length) {
+      issues.push("الملاحظات تشير إلى مخزن آخر (" + otherLocations.map(x => x.name).join("، ") + ")؛ الكمية لن تُوزع تلقائيًا. راجع توزيعها يدويًا.");
+    }
     if (item.sale_price_piasters === null) issues.push("سعر البيع غير مسجل؛ سيظل فارغًا وليس صفرًا.");
     if (item.purchase_price_piasters === null) issues.push("سعر الشراء غير مسجل؛ سيظل فارغًا وليس صفرًا.");
     const candidates = await findCandidates(db, item, cachedProducts);
     // Only flag a true duplicate identity in the same location. A reused part
     // code or name alone is not enough: different models/years/conditions may
     // represent distinct stock records.
-    const rowFingerprint = JSON.stringify([
-      normalize(item.brand_raw), normalize(item.part_name_ar), normalize(item.model_raw),
-      item.year_from ?? null, item.year_to ?? null, normalize(item.condition),
-      normalize(item.part_code), normalize(item.location_raw),
-    ]);
-    if (rowFingerprint !== '["","","",null,null,"","",""]' && seenRows.has(rowFingerprint)) {
+    const fingerprint = rowFingerprint(item);
+    if (fingerprint !== '["","","",null,null,"","",""]' && seenRows.has(fingerprint)) {
       issues.push("يوجد صف مطابق تمامًا لنفس القطعة والتوافق والحالة والكود وفي نفس المخزن؛ راجع الصفين قبل الاستيراد.");
     }
-    if (rowFingerprint !== '["","","",null,null,"","",""]') seenRows.add(rowFingerprint);
+    if (fingerprint !== '["","","",null,null,"","",""]') seenRows.add(fingerprint);
     if (candidates.length) issues.push("احتمال تكرار: راجع السجلات الموجودة واختر المطابقة أو إنشاء سجل مستقل.");
     output.push({ row_number: index + 1, raw, item, issues, candidates });
   }
@@ -208,6 +264,9 @@ async function handleExcelImport(request, url, env, session) {
     if (!filename.toLowerCase().endsWith(".xlsx")) return reply({ error: "النسخة الحالية تقبل ملفات Excel بصيغة .xlsx فقط." }, 400);
     if (!Array.isArray(sheetRows) || !sheetRows.length) return reply({ error: "ورقة العمل فارغة أو بياناتها غير صالحة." }, 400);
     if (sheetRows.length - 1 > MAX_ROWS) return reply({ error: "الملف يتجاوز الحد الأقصى وهو 500 صف." }, 413);
+    if (sheetRows.some(row => !Array.isArray(row) || row.some(cell =>
+      cell !== null && cell !== undefined && !["string", "number", "boolean"].includes(typeof cell)
+    ))) return reply({ error: "بنية صفوف Excel غير صالحة. أعد حفظ الملف بصيغة XLSX وحاول مرة أخرى." }, 400);
     const actualHeaders = (sheetRows[0] || []).map(x => normalize(x));
     const expectedHeaders = HEADERS.map(normalize);
     const missing = HEADERS.filter((header, i) => actualHeaders[i] !== expectedHeaders[i]);
@@ -283,11 +342,9 @@ async function handleExcelImport(request, url, env, session) {
     }
     const type = request.headers.get("Content-Type") || "";
     if (!/^application\/json(?:\s*;|\s*$)/i.test(type)) return reply({ error: "Content-Type must be application/json." }, 400);
-    const rawBody = await request.text();
-    if (rawBody.length > 64 * 1024) return reply({ error: "بيانات الاعتماد كبيرة جدًا." }, 413);
-    let body;
-    try { body = JSON.parse(rawBody); } catch { return reply({ error: "بيانات الاعتماد غير صالحة." }, 400); }
-    const decisions = body?.decisions;
+    const parsedBody = await readJsonBody(request, 64 * 1024);
+    if (parsedBody.error) return reply({ error: parsedBody.error }, 400);
+    const decisions = parsedBody.body?.decisions;
     if (!decisions || typeof decisions !== "object" || Array.isArray(decisions)) return reply({ error: "قرارات الصفوف مطلوبة." }, 400);
     const batchId = applyMatch[1];
     const batch = await env.DB.prepare("SELECT id,status FROM import_batches WHERE id=?").bind(batchId).first();
@@ -304,8 +361,14 @@ async function handleExcelImport(request, url, env, session) {
       const supplied = decisions[String(row.row_number)];
       const cleanAutomaticRow = issues.length === 0 && candidates.length === 0;
       const choice = supplied === undefined && cleanAutomaticRow ? "create" : supplied;
-      if (typeof choice !== "string" || !["skip", "create"].includes(choice) && !choice.startsWith("match:")) {
+      const invalidRow = !item.part_name_ar || item.part_name_ar.length > 160 ||
+        (item.year_from !== null && item.year_to !== null && item.year_to < item.year_from);
+      const exactDuplicate = issues.some(issue => issue.startsWith("يوجد صف مطابق تمامًا"));
+      if (typeof choice !== "string" || !["skip", "create"].includes(choice) && !/^match:[0-9a-f-]{36}$/i.test(choice)) {
         return reply({ error: "يوجد صف يحتاج مراجعة. اختر إنشاء أو مطابقة أو تخطي.", row_number: row.row_number }, 400);
+      }
+      if ((invalidRow || exactDuplicate) && choice !== "skip") {
+        return reply({ error: "هذا الصف غير صالح أو مكرر داخل الملف؛ المتاح له هو التخطي فقط.", row_number: row.row_number }, 400);
       }
       rowChoices.set(row.row_number, choice);
     }
@@ -393,6 +456,23 @@ async function handleExcelImport(request, url, env, session) {
     }
     const pending = await env.DB.prepare("SELECT COUNT(*) AS count FROM import_batch_rows WHERE batch_id=? AND status='preview'").bind(batchId).first();
     const complete = Number(pending?.count || 0) === 0;
+    const [locationReport, fitmentReport] = await Promise.all([
+      env.DB.prepare(`
+        SELECT l.name AS location_name, COUNT(DISTINCT ib.product_id) AS product_count,
+          COALESCE(SUM(ib.quantity),0) AS total_quantity
+        FROM inventory_balances ib JOIN locations l ON l.id=ib.location_id
+        WHERE ib.product_id IN (
+          SELECT applied_product_id FROM import_batch_rows
+          WHERE batch_id=? AND applied_product_id IS NOT NULL
+        )
+        GROUP BY l.id,l.name ORDER BY l.name
+      `).bind(batchId).all(),
+      env.DB.prepare(`
+        SELECT COUNT(*) AS count FROM import_batch_rows r
+        WHERE r.batch_id=? AND r.status='applied' AND r.applied_product_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM product_fitments f WHERE f.product_id=r.applied_product_id)
+      `).bind(batchId).first(),
+    ]);
     await env.DB.prepare(`
       UPDATE import_batches SET status=?,
         created_count=(SELECT COUNT(*) FROM import_batch_rows WHERE batch_id=? AND applied_action='created'),
@@ -402,9 +482,19 @@ async function handleExcelImport(request, url, env, session) {
       WHERE id=?
     `).bind(complete ? "applied" : "preview", batchId, batchId, batchId, failed,
       complete ? new Date().toISOString() : null, batchId).run();
-    return reply({ ok: true, created, matched, skipped, failed, pending: Number(pending?.count || 0), complete });
+    return reply({
+      ok: true, created, matched, skipped, failed,
+      pending: Number(pending?.count || 0), complete,
+      report: {
+        by_location: locationReport.results || [],
+        products_without_fitment: Number(fitmentReport?.count || 0),
+      },
+    });
   }
   return null;
 }
 
-export { handleExcelImport };
+export {
+  handleExcelImport, normalize, textValue, numberValue, moneyPiasters,
+  integerValue, yearValue, rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned,
+};
