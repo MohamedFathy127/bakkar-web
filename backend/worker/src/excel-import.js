@@ -320,7 +320,7 @@ async function handleExcelImport(request, url, env, session) {
     const sheetRows = parsed.body.rows;
     if (!filename.toLowerCase().endsWith(".xlsx")) return reply({ error: "النسخة الحالية تقبل ملفات Excel بصيغة .xlsx فقط." }, 400);
     if (!Array.isArray(sheetRows) || !sheetRows.length) return reply({ error: "ورقة العمل فارغة أو بياناتها غير صالحة." }, 400);
-    if (sheetRows.length - 1 > MAX_ROWS) return reply({ error: "الملف يتجاوز الحد الأقصى وهو 500 صف." }, 413);
+    if (sheetRows.length - 1 > MAX_ROWS) return reply({ error: "الملف يتجاوز الحد الأقصى وهو 100 صف." }, 413);
     if (sheetRows.some(row => !Array.isArray(row) || row.some(cell =>
       cell !== null && cell !== undefined && !["string", "number", "boolean"].includes(typeof cell)
     ))) return reply({ error: "بنية صفوف Excel غير صالحة. أعد حفظ الملف بصيغة XLSX وحاول مرة أخرى." }, 400);
