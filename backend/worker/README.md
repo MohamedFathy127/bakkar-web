@@ -55,12 +55,12 @@ The code in this branch is not automatically proof of what is currently deployed
 | POST | `/api/admin/imports/:id/apply` | Owner session + same-origin | Applies explicit per-row create/match/skip decisions |
 | POST | `/api/admin/stock-movements` | Owner session + same-origin | Records an inbound, outbound or adjustment movement |
 
-The product and stock-management routes are deployed to the isolated test Worker. The current work is isolated on `feature/admin-import-sync-v2` and PR #13, based on `feature/inventory-management`. The PR adds matched-product synchronization, row correction, repeat workbook synchronization, analytics, Excel export and a downloadable application-data backup. This PR has not been deployed to the Worker. Production remains unchanged.
+The product and stock-management routes are deployed to the isolated test Worker. The current work is isolated on `feature/admin-import-sync-v2` and PR #13, based on `feature/inventory-management`. The latest PR #13 code is deployed to the isolated test Worker, including matched-product synchronization, row correction, repeat workbook synchronization, analytics, Excel export and a downloadable application-data backup. Production remains unchanged.
 
 ## Deployment and test status
 
 - Migrations `0001` through `0009` are applied to the isolated test D1 database only. Migration `0004` seeds Hyundai, Kia and SsangYong vehicle brands; `0005` adds movement-driven balance triggers; `0006` fixes outbound balance updates while preserving the non-negative stock constraint; `0007` stages Excel imports; `0008` adds the recoverable apply lock; `0009` separates workbook content hashes from unique batch identifiers to allow a previously applied workbook to be synchronized again. Production D1 remains untouched.
-- The currently deployed test Worker is an earlier hardened build bound to `bakkar-inventory-test`. The code in PR #13 has passed CI checks but has not yet been deployed to the test Worker.
+- The latest PR #13 build is deployed to the isolated test Worker, bound to `bakkar-inventory-test`. Its `OWNER_EMAIL` secret binding and `ALLOWED_ORIGIN` setting were verified after deployment. GitHub Actions syntax, import tests and Wrangler dry-run checks passed. Direct runtime HTTP checks from the connected tool environment are blocked with a 403 network restriction, so browser end-to-end behavior still needs owner verification.
 - The test Worker retains `OWNER_EMAIL`; the one-time `BOOTSTRAP_SECRET` was removed after owner setup.
 - Production Worker and production D1 have not been changed.
 - Remaining verification: browser/API checks for valid and invalid login, IP throttling, malformed and oversized bodies, same-origin rejection, logout, and session expiry. Do not claim these checks passed until performed.
@@ -77,7 +77,7 @@ Do not put the owner email, bootstrap secret, password, session token or other c
 - Public output is allow-listed and excludes purchase prices, internal notes, exact inventory balances, staff records, import records and audit history.
 - SQL values use prepared statements. Errors returned to clients are generic; detailed failures are written to Worker logs.
 - CORS is restricted to the public Pages origin for the public catalog. CORS is not an authentication mechanism.
-- Owner-only product, location and stock-movement write routes are present in the isolated test Worker and require a valid owner session plus same-origin requests. PR #13 adds owner-only analytics, Excel export, application-data backup and safer Excel synchronization. These new PR routes are not deployed yet. Production Pages, Worker and D1 remain unchanged.
+- Owner-only product, location and stock-movement write routes are present in the isolated test Worker and require a valid owner session plus same-origin requests. PR #13 adds owner-only analytics, Excel export, application-data backup and safer Excel synchronization; these routes are deployed on the test Worker. Production Pages, Worker and D1 remain unchanged.
 - The downloadable JSON backup includes brands, categories, locations, products, fitments, balances, stock movements, audit history and import history. It intentionally excludes password hashes, active sessions, login throttles and staff-account credentials. It is an application-data snapshot, not a native D1 SQL dump or a one-click database restore.
 
 ## Local development
