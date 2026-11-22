@@ -45,10 +45,10 @@ The code in this branch is not automatically proof of what is currently deployed
 | DELETE | `/api/admin/products/:id` | Owner session + same-origin | Archives a product; it does not hard-delete history |
 | GET | `/api/admin/meta` | Owner session | Lists brands, categories and storage locations |
 | POST | `/api/admin/locations` | Owner session + same-origin | Creates a storage location |
-| GET | `/api/admin/stock-movements` | Owner session | Reads stock movement history |
+| GET | `/api/admin/stock-movements` | Owner session | Reads stock movement history |\n| POST | `/api/admin/imports/preview` | Owner session + same-origin | Uploads and stages an XLSX preview; no inventory writes |\n| GET | `/api/admin/imports/:id` | Owner session | Reads a staged import batch and its row decisions |\n| POST | `/api/admin/imports/:id/apply` | Owner session + same-origin | Applies explicit per-row create/match/skip decisions |
 | POST | `/api/admin/stock-movements` | Owner session + same-origin | Records an inbound, outbound or adjustment movement |
 
-These routes are implemented on the `feature/inventory-management` branch only. They are not deployed. The existing admin dashboard still needs its product and stock-management interface wired to these routes.
+The product and stock-management routes are implemented on `feature/inventory-management` and deployed to the isolated test Worker. The owner has browser-verified the core login, product, stock movement, and duplicate-review flows. The Excel import routes are only on `feature/excel-import` and have not been deployed. Production remains unchanged.
 
 ## Deployment and test status
 
@@ -70,7 +70,7 @@ Do not put the owner email, bootstrap secret, password, session token or other c
 - Public output is allow-listed and excludes purchase prices, internal notes, exact inventory balances, staff records, import records and audit history.
 - SQL values use prepared statements. Errors returned to clients are generic; detailed failures are written to Worker logs.
 - CORS is restricted to the public Pages origin for the public catalog. CORS is not an authentication mechanism.
-- No admin write routes are enabled. Product creation, edits, imports and stock movements require separate reviewed endpoints with transactional audit logging.
+- Owner-only product, location and stock-movement write routes are present in the isolated test Worker and require a valid owner session plus same-origin requests. The staged Excel import routes exist only on `feature/excel-import`; they require explicit per-row approval and are not deployed. Production Pages, Worker and D1 remain unchanged.
 
 ## Local development
 
@@ -104,3 +104,18 @@ Use synthetic test data locally. Do not point local development at production D1
 - Added `wrangler.test.jsonc` and explicit `dev:test` / `deploy:test` scripts so test commands target the isolated test D1 database, not the production database configured in `wrangler.jsonc`.
 - Added a GitHub Actions syntax check for both Worker modules.
 - Not yet verified: deployed runtime behavior for the new routes, atomic stock updates, concurrency behavior, or browser UI integration. Do not deploy to either Worker until syntax checks and test-environment validation are complete.
+
+
+## Staged Excel inventory import (feature/excel-import)
+
+- Owner-only `POST /api/admin/imports/preview` accepts a single `.xlsx` file (maximum 5 MiB, first worksheet, at most 500 data rows) using the agreed 12-column Arabic template:
+  `الماركة، اسم القطعة، موديل السيارة، من سنة، إلى سنة، الكمية، سعر البيع (ج.م)، سعر الشراء (ج.م)، الحالة، مكان التخزين، كود القطعة، ملاحظات`.
+- The upload is parsed with SheetJS 0.20.3 from the official SheetJS CDN. The parser is dynamically imported only when the owner opens an import, to reduce Worker startup cost.
+- The original row values and normalized fields are staged in `import_batches` and `import_batch_rows`; preview does not change products, stock balances, or movements.
+- The file's SHA-256 hash prevents creating a second batch from the exact same workbook. An existing preview can be resumed with `GET /api/admin/imports/:id`.
+- Each row requires an explicit owner decision: create a new product, match one of the detected existing products, or skip. Matching an existing product does not overwrite its name, code, condition, prices, fitments, or notes.
+- For a row with a valid location and quantity, the Excel quantity is treated as the target balance for that product/location. The import creates an append-only stock movement for the difference; it does not add the full quantity on every import. Re-importing an edited workbook therefore does not duplicate the same balance.
+- Blank prices remain SQL NULL; an explicit zero remains zero. Missing/invalid quantity remains unset and does not create a stock movement. Missing location does not create or adjust a balance. Unknown brands and locations, missing codes, placeholder model values, and duplicate candidates are surfaced as preview warnings.
+- Import-created products remain private (`is_public=0`) and vehicle fitments remain `pending`; public catalog visibility is never enabled by import.
+- Migration `0007_excel_import_staging.sql` adds staged row storage and must be applied to the isolated test D1 before testing these routes. Do not apply it to production without separate approval.
+- This feature is on `feature/excel-import` and is not deployed. Browser/runtime tests and the actual workbook validation remain outstanding.

@@ -1,4 +1,5 @@
 import { handleInventoryAdmin } from "./inventory.js";
+import { handleExcelImport } from "./excel-import.js";
 
 /**
  * Bakkar Inventory API
@@ -86,6 +87,16 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <label>مرجع (اختياري)</label><input id="movementReference" maxlength="100">
 <button type="submit">تسجيل الحركة</button>
 </form>
+<h3>استيراد بيانات Excel</h3>
+<div class="panel">
+<p>ارفع ملف المخزون بصيغة .xlsx. هنراجع كل صف ونوضح النواقص والتكرارات. لا يتم تعديل المخزون قبل اعتمادك.</p>
+<form id="importForm">
+<label>ملف Excel (.xlsx)</label><input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+<button id="previewImportBtn" type="submit">رفع الملف ومعاينة البيانات</button>
+</form>
+<div id="importPreview" class="notice hidden"></div>
+<button id="applyImportBtn" class="hidden" type="button">اعتماد الصفوف المختارة</button>
+</div>
 <h3>المنتجات المسجلة</h3><div id="products">جارٍ التحميل...</div>
 <h3>آخر حركات المخزون</h3><div id="movements">جارٍ التحميل...</div>
 </section>
@@ -185,6 +196,73 @@ $("movementForm").onsubmit=async e=>{e.preventDefault();const q=Number($("moveme
   await api("/api/admin/stock-movements",{method:"POST",body:JSON.stringify({product_id:$("movementProduct").value,location_id:$("movementLocation").value,movement_type:type,quantity_delta:type==="out"?-q:q,reason:$("movementReason").value,reference:$("movementReference").value})});
   $("movementForm").reset();$("availableStock").textContent="اختر القطعة والمخزن لعرض الرصيد المتاح.";message("adminMsg","تم تسجيل حركة المخزون.");await loadAdmin();
  }catch(e){message("adminMsg",e.message);await refreshAvailableStock()}
+};
+let importBatchId=null;
+let importRows=[];
+function renderImportPreview(data){
+ importBatchId=data.batch_id;importRows=data.rows||[];
+ const box=$("importPreview");box.classList.remove("hidden");
+ const rows=importRows.map(row=>{
+  const item=row.item||{},candidates=row.candidates||[];
+  const pending=!row.status||row.status==="preview";
+  const options=['<option value="">اختر قرار الصف</option>'];
+  const blocked=(row.issues||[]).some(issue=>issue.startsWith("يوجد صف آخر لنفس القطعة"))||!item.part_name_ar||item.part_name_ar.length>160||(item.year_from!=null&&item.year_to!=null&&item.year_to<item.year_from);
+  if(!blocked){
+   candidates.forEach(candidate=>options.push('<option value="match:'+escapeHtml(candidate.id)+'">مطابقة: '+escapeHtml(candidate.part_name_ar)+' — '+escapeHtml(candidate.condition||"الحالة غير محددة")+' — رصيد '+Number(candidate.total_quantity||0)+'</option>'));
+   options.push('<option value="create">إنشاء سجل جديد مستقل</option>');
+  }
+  options.push('<option value="skip">تخطي هذا الصف</option>');
+  const issues=(row.issues||[]).map(issue=>'<li>'+escapeHtml(issue)+'</li>').join("");
+  const decision=pending?'<select class="importDecision" data-row="'+Number(row.row_number)+'">'+options.join("")+'</select>':(row.status==="applied"?"تم اعتماده":"تم تخطيه");
+  return '<tr><td>'+Number(row.row_number)+'</td><td>'+escapeHtml(item.part_name_ar||"اسم غير موجود")+'</td><td>'+escapeHtml(item.brand_raw||"—")+' / '+escapeHtml(item.model_raw||"—")+'</td><td>'+(item.quantity==null?"غير محددة":Number(item.quantity))+'</td><td>'+escapeHtml(item.location_raw||"—")+'</td><td><ul>'+issues+'</ul></td><td>'+decision+'</td></tr>';
+ }).join("");
+ box.innerHTML='<strong>معاينة: '+escapeHtml(data.filename)+'</strong><p>عدد الصفوف: '+Number(data.total_rows)+' | صفوف بها تنبيهات: '+Number(data.warning_rows)+' | صفوف لها احتمالات تكرار: '+Number(data.duplicate_rows)+'</p><div style="overflow:auto"><table><thead><tr><th>صف</th><th>اسم القطعة</th><th>الماركة / الموديل</th><th>الكمية</th><th>المخزن</th><th>الملاحظات</th><th>قرارك</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">المطابقة لا تستبدل بيانات القطعة الموجودة. الكمية تُعامل كرصيد مستهدف للمخزن المحدد، وليس كمية تُضاف فوق الرصيد الحالي.</p>';
+ $("applyImportBtn").classList.toggle("hidden",!importRows.some(row=>!row.status||row.status==="preview"));
+}
+$("importForm").onsubmit=async e=>{
+ e.preventDefault();const file=$("excelFile").files[0];if(!file){message("adminMsg","اختر ملف Excel أولًا.");return}
+ const data=new FormData();data.append("file",file);
+ $("previewImportBtn").disabled=true;
+ try{
+  const response=await fetch("/api/admin/imports/preview",{method:"POST",body:data,credentials:"same-origin"});
+  const result=await response.json().catch(()=>({error:"استجابة غير مفهومة"}));
+  if(!response.ok){const error=Error(result.error||"تعذر معاينة الملف.");error.data=result;throw error}
+  renderImportPreview(result);
+ }catch(error){
+  if(error.data?.existing_batch){
+   const existing=error.data.existing_batch;
+   if(existing.status==="preview"){
+    try{
+     const saved=await api("/api/admin/imports/"+existing.id);
+     renderImportPreview({batch_id:existing.id,filename:existing.filename,total_rows:saved.batch.total_rows,
+      warning_rows:saved.rows.filter(row=>(row.issues||[]).length).length,
+      duplicate_rows:saved.rows.filter(row=>(row.candidates||[]).length).length,rows:saved.rows});
+     message("adminMsg","دي معاينة موجودة لنفس الملف؛ استكمل قراراتك من غير رفعه أو إنشاء دفعة جديدة.");
+    }catch(loadError){message("adminMsg",loadError.message)}
+   }else message("adminMsg","الملف ده تم اعتماده بالفعل. مش هنسمح باستيراده مرة تانية.");
+  }else message("adminMsg",error.message);
+ }finally{$("previewImportBtn").disabled=false}
+};
+$("applyImportBtn").onclick=async()=>{
+ if(!importBatchId)return;
+ const decisions={};
+ document.querySelectorAll(".importDecision").forEach(select=>{decisions[select.dataset.row]=select.value});
+ if(Object.values(decisions).some(value=>!value)){message("adminMsg","اختار قرارًا لكل صف قبل الاعتماد.");return}
+ if(!confirm("تأكيد اعتماد الصفوف؟ سيتم إنشاء القطع المختارة وتعديل رصيد المخزن ليطابق الكمية الموجودة في ملف Excel."))return;
+ $("applyImportBtn").disabled=true;
+ try{
+  const result=await api("/api/admin/imports/"+importBatchId+"/apply",{method:"POST",body:JSON.stringify({decisions})});
+  message("adminMsg","نتيجة الاستيراد: قطع جديدة "+result.created+"، قطع مطابقة "+result.matched+"، صفوف متخطاة "+result.skipped+"، صفوف لم تُعتمد "+result.failed+". "+(result.complete?"تم اعتماد الدفعة بالكامل.":"ما زالت هناك صفوف معلقة؛ راجع الصفوف التي لم تُعتمد."));
+  if(result.complete){$("applyImportBtn").classList.add("hidden");$("importPreview").classList.add("hidden");$("importForm").reset();importBatchId=null;importRows=[]}
+  else{
+   const saved=await api("/api/admin/imports/"+importBatchId);
+   renderImportPreview({batch_id:importBatchId,filename:saved.batch.filename,total_rows:saved.batch.total_rows,
+    warning_rows:saved.rows.filter(row=>(row.issues||[]).length).length,
+    duplicate_rows:saved.rows.filter(row=>(row.candidates||[]).length).length,rows:saved.rows});
+  }
+  await loadAdmin();
+ }catch(error){message("adminMsg",error.message)}
+ finally{$("applyImportBtn").disabled=false}
 };
 function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 $("loginBtn").onclick=async()=>{try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});$("password").value="";await refresh()}catch(e){message("loginMsg",e.message)}};
@@ -400,6 +478,8 @@ async function handleAdmin(request, url, env) {
     `).bind(limit).all();
     return json({ data: result.results || [] });
   }
+  const importResponse = await handleExcelImport(request, url, env, session);
+  if (importResponse) return importResponse;
   const inventoryResponse = await handleInventoryAdmin(request, url, env, session);
   if (inventoryResponse) return inventoryResponse;
   return json({ error: "Route not found." }, 404);
