@@ -31,7 +31,7 @@ function numberValue(value) {
   if (value === null || value === undefined || String(value).trim() === "") return null;
   const normalized = String(value).replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
   const cleaned = normalized.replace(/[,،]/g, "").replace(/[^0-9.+-]/g, "");
-  const match = cleaned.match(/[-+]?\\d+(?:\\.\\d+)?/);
+  const match = cleaned.match(/[-+]?[0-9]+(?:[.][0-9]+)?/);
   if (!match) return undefined;
   const parsed = Number(match[0]);
   return Number.isFinite(parsed) ? parsed : undefined;
