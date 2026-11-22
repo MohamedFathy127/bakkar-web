@@ -114,7 +114,7 @@ function parseCandidate(row) {
 }
 const CANDIDATE_SQL = `
   SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-    p.sale_price_piasters, p.purchase_price_piasters,
+    p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version,
     COALESCE((SELECT SUM(ib.quantity) FROM inventory_balances ib WHERE ib.product_id=p.id),0) AS total_quantity,
     COALESCE((
       SELECT json_group_array(json_object(
@@ -177,6 +177,19 @@ function otherLocationsMentioned(notes, locations, selectedLocationId) {
     return (full.length >= 4 && noteKey.includes(full)) || (short.length >= 3 && noteKey.includes(short));
   });
 }
+function buildMatchedProductUpdate(existing, item) {
+  // The inventory workbook is the source of truth for non-empty fields.
+  // Empty cells never erase website data; numeric zero remains an explicit value.
+  return {
+    part_name_ar: item.part_name_ar || existing.part_name_ar,
+    condition: item.condition ?? existing.condition,
+    part_code: item.part_code ?? existing.part_code,
+    sale_price_piasters: item.sale_price_piasters ?? existing.sale_price_piasters,
+    purchase_price_piasters: item.purchase_price_piasters ?? existing.purchase_price_piasters,
+    internal_notes: item.notes ?? existing.internal_notes,
+  };
+}
+
 function rowFingerprint(item) {
   return JSON.stringify([
     normalize(item.brand_raw), normalize(item.part_name_ar), normalize(item.model_raw),
@@ -203,7 +216,7 @@ async function parseRows(db, rows) {
     db.prepare("SELECT id,name,active FROM locations").all(),
     db.prepare(`
       SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-        p.sale_price_piasters, p.purchase_price_piasters,
+        p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version,
         COALESCE(SUM(ib.quantity),0) AS total_quantity,
         COALESCE((
           SELECT json_group_array(json_object(
@@ -530,7 +543,8 @@ async function handleExcelImport(request, url, env, session) {
       const item = JSON.parse(row.normalized_json);
       const action = choice === "create" ? "created" : "matched";
       const productId = action === "created" ? crypto.randomUUID() : choice.slice(6);
-      applyPlans.push({ row, item, action, productId });
+      const candidate = action === "matched" ? candidates.find(value => value.id === productId) : null;
+      applyPlans.push({ row, item, action, productId, candidate });
     }
 
     for (let offset = 0; offset < applyPlans.length; offset += 40) {
@@ -557,6 +571,37 @@ async function handleExcelImport(request, url, env, session) {
             `).bind(crypto.randomUUID(), productId, item.brand_id, item.model, item.year_from, item.year_to, now, now));
           }
         }
+        if (action === "matched") {
+          const existing = plan.candidate;
+          if (!existing) throw new Error("matched_product_candidate_missing");
+          const updated = buildMatchedProductUpdate(existing, item);
+          statements.push(env.DB.prepare(`
+            UPDATE products SET part_name_ar=?, condition=?, part_code=?,
+              sale_price_piasters=?, purchase_price_piasters=?, internal_notes=?,
+              version=version+1, updated_at=?
+            WHERE id=? AND version=?
+          `).bind(
+            updated.part_name_ar, updated.condition, updated.part_code,
+            updated.sale_price_piasters, updated.purchase_price_piasters,
+            updated.internal_notes, now, productId, existing.version
+          ));
+          if (item.brand_id && item.model) {
+            statements.push(env.DB.prepare(`
+              INSERT INTO product_fitments(id,product_id,brand_id,model,year_from,year_to,compatibility_status,created_at,updated_at)
+              SELECT ?,?,?,?,?,?,'pending',?,?
+              WHERE NOT EXISTS (
+                SELECT 1 FROM product_fitments
+                WHERE product_id=? AND brand_id=? AND lower(trim(model))=lower(trim(?))
+                  AND year_from IS ? AND year_to IS ?
+              )
+            `).bind(
+              crypto.randomUUID(), productId, item.brand_id, item.model,
+              item.year_from, item.year_to, now, now,
+              productId, item.brand_id, item.model, item.year_from, item.year_to
+            ));
+          }
+        }
+
         if (item.location_id && item.quantity !== null) {
           statements.push(env.DB.prepare(`
             INSERT INTO stock_movements
@@ -577,10 +622,19 @@ async function handleExcelImport(request, url, env, session) {
           ));
         }
         statements.push(env.DB.prepare(`
-          INSERT INTO audit_log(id,entity_type,entity_id,action,after_json,actor_email,created_at)
-          VALUES(?,?,?,?,?,?,?)
+          INSERT INTO audit_log(id,entity_type,entity_id,action,before_json,after_json,actor_email,created_at)
+          VALUES(?,?,?,?,?,?,?,?)
         `).bind(crypto.randomUUID(), "product", productId, "excel_import_" + action,
-          JSON.stringify({ batch_id: batchId, row_number: row.row_number, target_quantity: item.quantity, location_id: item.location_id }), session.email, now));
+          action === "matched" ? JSON.stringify(plan.candidate) : null,
+          JSON.stringify({
+            batch_id: batchId, row_number: row.row_number,
+            target_quantity: item.quantity, location_id: item.location_id,
+            product_fields: action === "matched" ? buildMatchedProductUpdate(plan.candidate, item) : {
+              part_name_ar: item.part_name_ar, condition: item.condition, part_code: item.part_code,
+              sale_price_piasters: item.sale_price_piasters,
+              purchase_price_piasters: item.purchase_price_piasters, internal_notes: item.notes
+            }
+          }), session.email, now));
         statements.push(env.DB.prepare("UPDATE import_batch_rows SET status='applied',applied_action=?,applied_product_id=?,applied_at=? WHERE id=? AND status='preview'")
           .bind(action, productId, now, row.id));
       }
@@ -642,4 +696,5 @@ async function handleExcelImport(request, url, env, session) {
 export {
   handleExcelImport, normalize, textValue, numberValue, moneyPiasters,
   integerValue, yearValue, rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned, findDuplicateMatchedTargets, findCandidatesForItems,
+  buildMatchedProductUpdate,
 };
