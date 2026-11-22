@@ -208,7 +208,7 @@ async function handleExcelImport(request, url, env, session) {
     const actualHeaders = (sheetRows[0] || []).map(x => normalize(x));
     const expectedHeaders = HEADERS.map(normalize);
     const missing = HEADERS.filter((header, i) => actualHeaders[i] !== expectedHeaders[i]);
-    if (missing.length) return reply({ error: "عناوين الأعمدة أو ترتيبها لا يطابق قالب بكار.", expected_headers: HEADERS, actual_headers: sheetRows[0] || [] }, 400);
+    if (missing.length || actualHeaders.length !== expectedHeaders.length) return reply({ error: "عناوين الأعمدة أو عددها أو ترتيبها لا يطابق قالب بكار.", expected_headers: HEADERS, actual_headers: sheetRows[0] || [] }, 400);
     if (sheetRows.length - 1 > MAX_ROWS) return reply({ error: "الملف يتجاوز الحد الأقصى وهو 500 صف." }, 413);
     const rows = await parseRows(env.DB, sheetRows);
     if (!rows.length) return reply({ error: "لم يتم العثور على صفوف بيانات." }, 400);
@@ -280,6 +280,12 @@ async function handleExcelImport(request, url, env, session) {
     const rowsResult = await env.DB.prepare("SELECT * FROM import_batch_rows WHERE batch_id=? AND status='preview' ORDER BY row_number").bind(batchId).all();
     const rows = rowsResult.results || [];
     if (!rows.length) return reply({ error: "لا توجد صفوف معلقة في هذه الدفعة." }, 409);
+    for (const row of rows) {
+      const choice = decisions[String(row.row_number)];
+      if (typeof choice !== "string" || !["skip", "create"].includes(choice) && !choice.startsWith("match:")) {
+        return reply({ error: "يجب اختيار قرار صحيح لكل صف قبل الاعتماد.", row_number: row.row_number }, 400);
+      }
+    }
     let created = 0, matched = 0, skipped = 0, failed = 0;
     for (const row of rows) {
       const choice = decisions[String(row.row_number)];
@@ -292,6 +298,7 @@ async function handleExcelImport(request, url, env, session) {
       }
       const item = JSON.parse(row.normalized_json);
       const issues = JSON.parse(row.issues_json);
+      if (issues.some(issue => issue.startsWith("يوجد صف آخر لنفس القطعة")) ) { failed++; continue; }
       if (!item.part_name_ar || item.part_name_ar.length > 160 ||
           (item.year_from !== null && item.year_to !== null && item.year_to < item.year_from)) {
         failed++;
