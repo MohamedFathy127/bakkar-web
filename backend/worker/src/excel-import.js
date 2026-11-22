@@ -169,61 +169,24 @@ async function handleExcelImport(request, url, env, session) {
     if (!origin || origin !== new URL(request.url).origin || (fetchSite && fetchSite !== "same-origin")) {
       return reply({ error: "Invalid request origin." }, 403);
     }
-    const reader = request.body?.getReader();
-    if (!reader) return reply({ error: "ملف Excel مطلوب." }, 400);
-    const chunks = [];
-    let totalBytes = 0;
-    try {
-      while (true) {
-        const part = await reader.read();
-        if (part.done) break;
-        totalBytes += part.value.byteLength;
-        if (totalBytes > MAX_FILE_BYTES + 64 * 1024) {
-          await reader.cancel();
-          return reply({ error: "حجم الملف أكبر من 5 ميجابايت." }, 413);
-        }
-        chunks.push(part.value);
-      }
-    } finally { reader.releaseLock(); }
-    const requestBytes = new Uint8Array(totalBytes);
-    let requestOffset = 0;
-    for (const chunk of chunks) { requestBytes.set(chunk, requestOffset); requestOffset += chunk.byteLength; }
-    let form;
-    try {
-      const replay = new Request(request.url, { method: "POST", headers: request.headers, body: requestBytes });
-      form = await replay.formData();
-    } catch { return reply({ error: "تعذر قراءة ملف Excel." }, 400); }
-    const file = form.get("file");
-    if (!file || typeof file.arrayBuffer !== "function") return reply({ error: "اختر ملف Excel أولًا." }, 400);
-    const filename = String(file.name || "inventory.xlsx").replace(/[\\/\\0-\\x1f]/g, "_").slice(0, 120);
-    if (!/\.xlsx$/i.test(filename)) return reply({ error: "النسخة الحالية تقبل ملفات Excel بصيغة .xlsx فقط." }, 400);
-    if (file.size < 4 || file.size > MAX_FILE_BYTES) return reply({ error: "حجم الملف يجب أن يكون أقل من 5 ميجابايت." }, 413);
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    if (bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 0x03 || bytes[3] !== 0x04) {
-      return reply({ error: "الملف لا يبدو كملف XLSX صالح." }, 400);
-    }
-    let workbook;
-    let XLSX;
-    try {
-      XLSX = await import("xlsx");
-      workbook = XLSX.read(bytes, { type: "array", cellFormula: false, cellHTML: false, cellStyles: false, bookVBA: false });
-    } catch {
-      return reply({ error: "تعذر قراءة ملف Excel. تأكد أن الملف غير تالف." }, 400);
-    }
-    const sheetName = workbook.SheetNames?.[0];
-    if (!sheetName) return reply({ error: "الملف لا يحتوي على ورقة عمل." }, 400);
-    const sheetRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: null, blankrows: false });
-    if (!sheetRows.length) return reply({ error: "ورقة العمل فارغة." }, 400);
+    const parsed = await readJsonBody(request, MAX_FILE_BYTES + 64 * 1024);
+    if (parsed.error) return reply({ error: parsed.error }, 400);
+    const filename = String(parsed.body.filename || "inventory.xlsx").replace(/[\\/\\0-\\x1f]/g, "_").slice(0, 120);
+    const sheetRows = parsed.body.rows;
+    if (!/\\.xlsx$/i.test(filename)) return reply({ error: "النسخة الحالية تقبل ملفات Excel بصيغة .xlsx فقط." }, 400);
+    if (!Array.isArray(sheetRows) || !sheetRows.length) return reply({ error: "ورقة العمل فارغة أو بياناتها غير صالحة." }, 400);
+    if (sheetRows.length - 1 > MAX_ROWS) return reply({ error: "الملف يتجاوز الحد الأقصى وهو 500 صف." }, 413);
     const actualHeaders = (sheetRows[0] || []).map(x => normalize(x));
     const expectedHeaders = HEADERS.map(normalize);
     const missing = HEADERS.filter((header, i) => actualHeaders[i] !== expectedHeaders[i]);
     const extraHeaders = actualHeaders.slice(HEADERS.length).some(value => value !== "");
     const extraData = sheetRows.slice(1).some(row => (row || []).slice(HEADERS.length).some(value => textValue(value) !== null));
     if (missing.length || extraHeaders || extraData) return reply({ error: "عناوين الأعمدة أو بياناتها لا تطابق قالب بكار المكوّن من 12 عمودًا.", expected_headers: HEADERS, actual_headers: sheetRows[0] || [] }, 400);
-    if (sheetRows.length - 1 > MAX_ROWS) return reply({ error: "الملف يتجاوز الحد الأقصى وهو 500 صف." }, 413);
     const rows = await parseRows(env.DB, sheetRows);
     if (!rows.length) return reply({ error: "لم يتم العثور على صفوف بيانات." }, 400);
-    const hash = await sha256Hex(bytes);
+    // Hash worksheet data rather than workbook metadata, so identical inventory
+    // rows cannot be staged twice under a different filename or formatting.
+    const hash = await sha256Hex(new TextEncoder().encode(JSON.stringify(sheetRows)));
     const batchId = crypto.randomUUID();
     const now = new Date().toISOString();
     try {
