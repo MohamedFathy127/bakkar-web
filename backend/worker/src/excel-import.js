@@ -405,7 +405,7 @@ async function handleExcelImport(request, url, env, session) {
     return reply({ batch, rows: mapped });
   }
 
-  const applyMatch = path.match(/^\\/api\\/admin\\/imports\\/([0-9a-f-]{36})\\/apply$/i);
+  const applyMatch = path.match(/^\/api\/admin\/imports\/([0-9a-f-]{36})\/apply$/i);
   if (applyMatch && method === "POST") {
     const origin = request.headers.get("Origin");
     const fetchSite = request.headers.get("Sec-Fetch-Site");
@@ -540,7 +540,7 @@ async function handleExcelImport(request, url, env, session) {
             item.notes,
             item.brand_raw ? "الماركة من ملف الاستيراد: " + item.brand_raw : "",
             item.model_raw && !item.model ? "موديل السيارة كما ورد: " + item.model_raw : "",
-          ].filter(Boolean).join("\\n").slice(0, 2000) || null;
+          ].filter(Boolean).join("\n").slice(0, 2000) || null;
           statements.push(env.DB.prepare(`
             INSERT INTO products(id,part_name_ar,condition,part_code,internal_notes,sale_price_piasters,purchase_price_piasters,is_public,version,created_at,updated_at)
             VALUES(?,?,?,?,?,?,?,0,1,?,?)
