@@ -1,10 +1,9 @@
-name: Excel import reliability checks
+name: Excel import checks
 
 on:
   push:
     branches:
       - feature/excel-import
-      - feature/inventory-reliability
   pull_request:
     branches:
       - feature/inventory-management

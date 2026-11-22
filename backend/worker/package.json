@@ -8,8 +8,7 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types",
     "dev:test": "wrangler dev --config wrangler.test.jsonc",
-    "deploy:test": "wrangler deploy --config wrangler.test.jsonc",
-    "test": "node --test src/*.test.js"
+    "deploy:test": "wrangler deploy --config wrangler.test.jsonc"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
