@@ -158,7 +158,8 @@ JOIN product_fitments f ON f.product_id = p.id
 JOIN brands b ON b.id = f.brand_id
 LEFT JOIN categories c ON c.id = p.category_id
 WHERE p.is_public = 1
-  AND p.archived_at IS NULL;
+  AND p.archived_at IS NULL
+  AND f.compatibility_status = 'confirmed';
 
 -- Movements are append-only. Corrections must be represented by a compensating
 -- movement rather than rewriting historical stock records.
