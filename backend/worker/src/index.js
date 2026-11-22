@@ -191,9 +191,9 @@ function importMessage(value){$("excelImportMsg").textContent=value;$("excelImpo
 let renderedImportBatchId=null;
 function normalizeMatchText(value){
  return String(value??"").normalize("NFKC").toLowerCase()
-  .replace(/[\\u064B-\\u065F\\u0670]/g,"")
+  .replace(/[\u064B-\u065F\u0670]/g,"")
   .replace(/[أإآ]/g,"ا").replace(/ى/g,"ي")
-  .replace(/[\\s\\u200f\\u200e]+/g," ").trim();
+  .replace(/[\s\u200f\u200e]+/g," ").trim();
 }
 function renderImportRows(rows,batch){
  const sameBatch=Boolean(batch?.id&&batch.id===renderedImportBatchId);
