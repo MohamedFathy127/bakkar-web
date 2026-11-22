@@ -47,6 +47,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <h2>مرحبًا <span id="who"></span></h2>
 <p>إدارة المنتجات والأرصدة وحركة المخزون. أي تعديل هنا يُحفظ في قاعدة البيانات.</p>
 <div id="adminMsg" class="notice hidden"></div>
+<div id="duplicateReview" class="panel hidden"></div>
 <h3>إضافة قطعة</h3>
 <form id="productForm" class="panel">
 <label>اسم القطعة بالعربي *</label><input id="partName" required maxlength="160">
@@ -78,6 +79,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <form id="movementForm" class="panel">
 <label>القطعة</label><select id="movementProduct" required><option value="">اختر القطعة</option></select>
 <label>المخزن</label><select id="movementLocation" required><option value="">اختر المخزن</option></select>
+<div id="availableStock" class="notice">اختر القطعة والمخزن لعرض الرصيد المتاح.</div>
 <label>نوع الحركة</label><select id="movementType"><option value="in">إضافة للمخزون</option><option value="out">صرف من المخزون</option></select>
 <label>الكمية</label><input id="movementQuantity" type="number" min="1" max="1000000" step="1" required>
 <label>السبب أو الملاحظة</label><input id="movementReason" maxlength="240">
@@ -90,42 +92,97 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <script>
 const $=id=>document.getElementById(id);
 let editingProductId=null,editingVersion=null,editingFitments=[],editingCategoryId=null,editingAliases="",editingNotes="";
-function clearProductEdit(){editingProductId=null;editingVersion=null;editingFitments=[];editingCategoryId=null;editingAliases="";editingNotes="";$("productForm").reset();$("saveProductBtn").textContent="حفظ القطعة";$("cancelEditBtn").classList.add("hidden")}
-async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{"content-type":"application/json",...(opts.headers||{})},credentials:"same-origin"});const d=await r.json().catch(()=>({error:"استجابة غير مفهومة"}));if(!r.ok)throw Error(d.error||"حدث خطأ");return d}
+function clearProductEdit(){editingProductId=null;editingVersion=null;editingFitments=[];editingCategoryId=null;editingAliases="";editingNotes="";$("productForm").reset();$("saveProductBtn").textContent="حفظ القطعة";$("cancelEditBtn").classList.add("hidden");$("duplicateReview").classList.add("hidden")}
+async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{"content-type":"application/json",...(opts.headers||{})},credentials:"same-origin"});const d=await r.json().catch(()=>({error:"استجابة غير مفهومة"}));if(!r.ok){const e=Error(d.error||"حدث خطأ");e.status=r.status;e.code=d.code;e.data=d;throw e}return d}
 function message(id,s){$(id).textContent=s;$(id).classList.remove("hidden")}
 function show(which){["login","setup","dashboard"].forEach(x=>$(x).classList.toggle("hidden",x!==which));$("logout").classList.toggle("hidden",which!=="dashboard")}
 async function refresh(){try{const d=await api("/api/admin/me");$("who").textContent=d.user.email;show("dashboard");await loadAdmin()}catch(e){show("login")}}
-function egpToPiasters(id){const v=$(id).value;if(v==="")return null;const n=Number(v);return Number.isFinite(n)&&n>=0?Math.round(n*100):undefined}
-async function loadAdmin(){
- const [p,m,h]=await Promise.all([api("/api/admin/products"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12")]);
- $("brandId").innerHTML='<option value="">اختر الماركة</option>'+m.brands.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name_ar)+'</option>').join("");
- $("movementProduct").innerHTML='<option value="">اختر القطعة</option>'+p.data.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.part_name_ar)+'</option>').join("");
- $("movementLocation").innerHTML='<option value="">اختر المخزن</option>'+m.locations.filter(x=>x.active).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join("");
- $("locations").textContent=m.locations.length?m.locations.map(x=>x.name+(x.active?"":" (غير نشط)")).join(" • "):"لم تتم إضافة أماكن تخزين بعد.";
- $("products").innerHTML=p.data.length?'<table><thead><tr><th>القطعة</th><th>الحالة</th><th>الرصيد</th><th>سعر البيع</th><th>إجراء</th></tr></thead><tbody>'+p.data.map(x=>'<tr><td>'+escapeHtml(x.part_name_ar)+'</td><td>'+escapeHtml(x.condition||"—")+'</td><td>'+Number(x.total_quantity||0)+'</td><td>'+(x.sale_price_piasters==null?"—":(Number(x.sale_price_piasters)/100).toFixed(2)+" ج.م")+'</td><td><button class="secondary editBtn" data-id="'+escapeHtml(x.id)+'">تعديل</button> <button class="secondary archiveBtn" data-id="'+escapeHtml(x.id)+'" data-version="'+Number(x.version)+'">أرشفة</button></td></tr>').join("")+'</tbody></table>':"لا توجد منتجات مسجلة حتى الآن.";
- $("movements").innerHTML=h.data.length?'<table><thead><tr><th>القطعة</th><th>المخزن</th><th>الحركة</th><th>الكمية</th><th>الرصيد بعدها</th></tr></thead><tbody>'+h.data.map(x=>'<tr><td>'+escapeHtml(x.part_name_ar)+'</td><td>'+escapeHtml(x.location_name)+'</td><td>'+({in:"إضافة",out:"صرف",adjustment:"تسوية"}[x.movement_type]||x.movement_type)+'</td><td>'+Number(x.quantity_delta)+'</td><td>'+Number(x.balance_after)+'</td></tr>').join("")+'</tbody></table>':"لا توجد حركات مخزون حتى الآن.";
- document.querySelectorAll(".editBtn").forEach(btn=>btn.onclick=async()=>{try{
-  const result=await api("/api/admin/products/"+btn.dataset.id);const p=result.data;
+async function openExistingProductForReview(id){
+ try{
+  const result=await api("/api/admin/products/"+id);const p=result.data;
   editingProductId=p.id;editingVersion=Number(p.version);editingFitments=(p.fitments||[]).map(f=>({brand_id:f.brand_id,model:f.model,year_from:f.year_from,year_to:f.year_to,compatibility_status:f.compatibility_status}));
   editingCategoryId=p.category_id||null;editingAliases=p.aliases||"";editingNotes=p.internal_notes||"";
   $("partName").value=p.part_name_ar||"";$("partNameEn").value=p.part_name_en||"";$("partCode").value=p.part_code||"";$("condition").value=p.condition||"";
   $("salePrice").value=p.sale_price_piasters==null?"":(Number(p.sale_price_piasters)/100).toFixed(2);
   $("purchasePrice").value=p.purchase_price_piasters==null?"":(Number(p.purchase_price_piasters)/100).toFixed(2);
   const f=editingFitments[0];$("brandId").value=f?.brand_id||"";$("vehicleModel").value=f?.model||"";$("yearFrom").value=f?.year_from||"";$("yearTo").value=f?.year_to||"";$("fitmentStatus").value=f?.compatibility_status||"pending";$("isPublic").checked=Boolean(p.is_public);
-  $("saveProductBtn").textContent="حفظ التعديلات";$("cancelEditBtn").classList.remove("hidden");$("productForm").scrollIntoView({behavior:"smooth",block:"start"});
- }catch(e){message("adminMsg",e.message)}});
- document.querySelectorAll(".archiveBtn").forEach(btn=>btn.onclick=async()=>{if(!confirm("أرشفة القطعة؟ ستختفي من الكتالوج العام مع الاحتفاظ بسجلها."))return;try{await api("/api/admin/products/"+btn.dataset.id,{method:"DELETE",body:JSON.stringify({version:Number(btn.dataset.version)})});message("adminMsg","تمت أرشفة القطعة.");await loadAdmin()}catch(e){message("adminMsg",e.message)}});
+  $("saveProductBtn").textContent="حفظ التعديلات";$("cancelEditBtn").classList.remove("hidden");$("duplicateReview").classList.add("hidden");
+  message("adminMsg","تم فتح السجل الموجود. راجع بياناته وعدّل المطلوب قبل الحفظ؛ لم يتم دمج أو نقل أي مخزون تلقائيًا.");
+  $("productForm").scrollIntoView({behavior:"smooth",block:"start"});
+ }catch(e){message("adminMsg",e.message)}
 }
-$("productForm").onsubmit=async e=>{e.preventDefault();let fitments=editingProductId?[...editingFitments]:[];if($("brandId").value||$("vehicleModel").value){const f={brand_id:$("brandId").value,model:$("vehicleModel").value,year_from:$("yearFrom").value||null,year_to:$("yearTo").value||null,compatibility_status:$("fitmentStatus").value};if(fitments.length)fitments[0]=f;else fitments.push(f)}
- const sale=egpToPiasters("salePrice"),purchase=egpToPiasters("purchasePrice");if(sale===undefined||purchase===undefined){message("adminMsg","راجع الأسعار.");return}
+function buildProductPayload(){
+ let fitments=editingProductId?[...editingFitments]:[];
+ if($("brandId").value||$("vehicleModel").value){
+  const f={brand_id:$("brandId").value,model:$("vehicleModel").value,year_from:$("yearFrom").value||null,year_to:$("yearTo").value||null,compatibility_status:$("fitmentStatus").value};
+  if(fitments.length)fitments[0]=f;else fitments.push(f);
+ }
+ const sale=egpToPiasters("salePrice"),purchase=egpToPiasters("purchasePrice");
+ if(sale===undefined||purchase===undefined)throw Error("راجع الأسعار.");
  const payload={part_name_ar:$("partName").value,part_name_en:$("partNameEn").value,part_code:$("partCode").value,condition:$("condition").value,sale_price_piasters:sale,purchase_price_piasters:purchase,fitments,is_public:$("isPublic").checked,category_id:editingCategoryId,aliases:editingAliases,internal_notes:editingNotes};
  if(editingProductId)payload.version=editingVersion;
- try{if(editingProductId){await api("/api/admin/products/"+editingProductId,{method:"PUT",body:JSON.stringify(payload)});message("adminMsg","تم تحديث القطعة.")}else{await api("/api/admin/products",{method:"POST",body:JSON.stringify(payload)});message("adminMsg","تم حفظ القطعة.")}clearProductEdit();await loadAdmin()}catch(e){message("adminMsg",e.message)}
+ return payload;
+}
+function showDuplicateReview(candidates,payload){
+ $("duplicateReview").classList.remove("hidden");
+ const money=v=>v==null?"غير محدد":(Number(v)/100).toFixed(2)+" جنيه";
+ const fitments=p=>(p.fitments||[]).map(f=>[f.brand_name_ar,f.model,f.year_from||"؟",f.year_to||"؟"].join(" / ")).join("، ")||"لا يوجد توافق مسجل";
+ $("duplicateReview").innerHTML='<h3>تنبيه: احتمال وجود قطعة مكررة</h3><p>وجدنا سجلات بنفس اسم القطعة أو كودها. راجع الاختلافات قبل إنشاء سجل جديد.</p>'+
+ candidates.map(x=>'<div class="panel"><strong>'+escapeHtml(x.part_name_ar)+'</strong><p>الحالة: '+escapeHtml(x.condition||"غير محددة")+' | الكود: '+escapeHtml(x.part_code||"غير مسجل")+'</p><p>الرصيد الحالي: '+Number(x.total_quantity||0)+' قطعة</p><p>سعر البيع: '+money(x.sale_price_piasters)+' | الشراء: '+money(x.purchase_price_piasters)+'</p><p>توافق السيارات: '+escapeHtml(fitments(x))+'</p><button type="button" class="secondary sameProductBtn" data-id="'+escapeHtml(x.id)+'">نفس القطعة — افتح السجل للمراجعة</button></div>').join("")+
+ '<p>لو كل النتائج دي قطع مختلفة فعلًا، أكد إنشاء سجل مستقل.</p><button type="button" id="confirmSeparateProduct">قطعة مختلفة — إنشاء سجل جديد</button>';
+ document.querySelectorAll(".sameProductBtn").forEach(btn=>btn.onclick=()=>openExistingProductForReview(btn.dataset.id));
+ $("confirmSeparateProduct").onclick=async()=>{
+  try{
+   const confirmed={...payload,duplicate_decision:"different",duplicate_confirmed_ids:candidates.map(x=>x.id)};
+   await api("/api/admin/products",{method:"POST",body:JSON.stringify(confirmed)});
+   clearProductEdit();message("adminMsg","تم إنشاء قطعة مستقلة بعد تأكيدك أنها مختلفة.");await loadAdmin();
+  }catch(e){if(e.code==="possible_duplicate"&&e.data?.candidates)showDuplicateReview(e.data.candidates,payload);else message("adminMsg",e.message)}
+ };
+}
+async function refreshAvailableStock(){
+ const productId=$("movementProduct").value,locationId=$("movementLocation").value;
+ if(!productId||!locationId){$("availableStock").textContent="اختر القطعة والمخزن لعرض الرصيد المتاح.";return}
+ try{const b=await api("/api/admin/stock-balance?product_id="+encodeURIComponent(productId)+"&location_id="+encodeURIComponent(locationId));$("availableStock").textContent="الرصيد المتاح في هذا المخزن: "+b.quantity+" قطعة";}
+ catch(e){$("availableStock").textContent=e.message}
+}
+function egpToPiasters(id){const v=$(id).value;if(v==="")return null;const n=Number(v);return Number.isFinite(n)&&n>=0?Math.round(n*100):undefined}
+async function loadAdmin(){
+ const [p,m,h]=await Promise.all([api("/api/admin/products"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12")]);
+ $("brandId").innerHTML='<option value="">اختر الماركة</option>'+m.brands.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name_ar)+'</option>').join("");
+ $("movementProduct").innerHTML='<option value="">اختر القطعة</option>'+p.data.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.part_name_ar)+' — '+escapeHtml(x.condition||"الحالة غير محددة")+' — رصيد إجمالي: '+Number(x.total_quantity||0)+' — #'+escapeHtml(x.id.slice(0,8))+'</option>').join("");
+ $("movementLocation").innerHTML='<option value="">اختر المخزن</option>'+m.locations.filter(x=>x.active).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join("");
+ $("locations").textContent=m.locations.length?m.locations.map(x=>x.name+(x.active?"":" (غير نشط)")).join(" • "):"لم تتم إضافة أماكن تخزين بعد.";
+ $("products").innerHTML=p.data.length?'<table><thead><tr><th>القطعة</th><th>الحالة</th><th>الرصيد</th><th>سعر البيع</th><th>إجراء</th></tr></thead><tbody>'+p.data.map(x=>'<tr><td>'+escapeHtml(x.part_name_ar)+'</td><td>'+escapeHtml(x.condition||"—")+'</td><td>'+Number(x.total_quantity||0)+'</td><td>'+(x.sale_price_piasters==null?"—":(Number(x.sale_price_piasters)/100).toFixed(2)+" ج.م")+'</td><td><button class="secondary editBtn" data-id="'+escapeHtml(x.id)+'">تعديل</button> <button class="secondary archiveBtn" data-id="'+escapeHtml(x.id)+'" data-version="'+Number(x.version)+'">أرشفة</button></td></tr>').join("")+'</tbody></table>':"لا توجد منتجات مسجلة حتى الآن.";
+ $("movements").innerHTML=h.data.length?'<table><thead><tr><th>القطعة</th><th>المخزن</th><th>الحركة</th><th>الكمية</th><th>الرصيد بعدها</th></tr></thead><tbody>'+h.data.map(x=>'<tr><td>'+escapeHtml(x.part_name_ar)+'</td><td>'+escapeHtml(x.location_name)+'</td><td>'+({in:"إضافة",out:"صرف",adjustment:"تسوية"}[x.movement_type]||x.movement_type)+'</td><td>'+Number(x.quantity_delta)+'</td><td>'+Number(x.balance_after)+'</td></tr>').join("")+'</tbody></table>':"لا توجد حركات مخزون حتى الآن.";
+ document.querySelectorAll(".editBtn").forEach(btn=>btn.onclick=()=>openExistingProductForReview(btn.dataset.id));
+ document.querySelectorAll(".archiveBtn").forEach(btn=>btn.onclick=async()=>{if(!confirm("أرشفة القطعة؟ ستختفي من الكتالوج العام مع الاحتفاظ بسجلها."))return;try{await api("/api/admin/products/"+btn.dataset.id,{method:"DELETE",body:JSON.stringify({version:Number(btn.dataset.version)})});message("adminMsg","تمت أرشفة القطعة.");await loadAdmin()}catch(e){message("adminMsg",e.message)}});
+}
+$("productForm").onsubmit=async e=>{e.preventDefault();try{
+ const payload=buildProductPayload();
+ if(editingProductId){
+  await api("/api/admin/products/"+editingProductId,{method:"PUT",body:JSON.stringify(payload)});
+  message("adminMsg","تم تحديث القطعة.");
+ }else{
+  const check=await api("/api/admin/products/duplicate-check",{method:"POST",body:JSON.stringify(payload)});
+  if(check.candidates?.length){showDuplicateReview(check.candidates,payload);return}
+  await api("/api/admin/products",{method:"POST",body:JSON.stringify(payload)});
+  message("adminMsg","تم حفظ القطعة.");
+ }
+ clearProductEdit();await loadAdmin();
+ }catch(e){if(e.code==="possible_duplicate"&&e.data?.candidates)showDuplicateReview(e.data.candidates,buildProductPayload());else message("adminMsg",e.message)}
 };
 $("cancelEditBtn").onclick=clearProductEdit;
 $("locationForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/admin/locations",{method:"POST",body:JSON.stringify({name:$("locationName").value})});$("locationForm").reset();message("adminMsg","تمت إضافة مكان التخزين.");await loadAdmin()}catch(e){message("adminMsg",e.message)}};
+$("movementProduct").onchange=refreshAvailableStock;$("movementLocation").onchange=refreshAvailableStock;
 $("movementForm").onsubmit=async e=>{e.preventDefault();const q=Number($("movementQuantity").value);if(!Number.isSafeInteger(q)||q<1){message("adminMsg","أدخل كمية صحيحة.");return}
- const type=$("movementType").value;try{await api("/api/admin/stock-movements",{method:"POST",body:JSON.stringify({product_id:$("movementProduct").value,location_id:$("movementLocation").value,movement_type:type,quantity_delta:type==="out"?-q:q,reason:$("movementReason").value,reference:$("movementReference").value})});$("movementForm").reset();message("adminMsg","تم تسجيل حركة المخزون.");await loadAdmin()}catch(e){message("adminMsg",e.message)}
+ const type=$("movementType").value;try{
+  if(type==="out"){
+   const current=await api("/api/admin/stock-balance?product_id="+encodeURIComponent($("movementProduct").value)+"&location_id="+encodeURIComponent($("movementLocation").value));
+   if(q>current.quantity){message("adminMsg","الرصيد المتاح في هذا المخزن "+current.quantity+" قطعة فقط. تأكد أنك اخترت سجل القطعة الصحيح.");return}
+  }
+  await api("/api/admin/stock-movements",{method:"POST",body:JSON.stringify({product_id:$("movementProduct").value,location_id:$("movementLocation").value,movement_type:type,quantity_delta:type==="out"?-q:q,reason:$("movementReason").value,reference:$("movementReference").value})});
+  $("movementForm").reset();$("availableStock").textContent="اختر القطعة والمخزن لعرض الرصيد المتاح.";message("adminMsg","تم تسجيل حركة المخزون.");await loadAdmin();
+ }catch(e){message("adminMsg",e.message);await refreshAvailableStock()}
 };
 function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 $("loginBtn").onclick=async()=>{try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});$("password").value="";await refresh()}catch(e){message("loginMsg",e.message)}};
