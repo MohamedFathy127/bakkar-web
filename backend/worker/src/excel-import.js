@@ -263,6 +263,9 @@ async function parseRows(db, rows) {
     if (invalidYearInput) item.model = null;
     if (item.model_raw === "***") issues.push("موديل السيارة مكتوب ***؛ تم ترك التوافق غير محدد.");
     if (item.model && item.model.length > 80) { issues.push("موديل السيارة أطول من الحد المسموح؛ تم ترك التوافق غير محدد."); item.model = null; }
+    if (item.year_from !== null && item.year_to !== null && item.year_to < item.year_from) {
+      issues.push("سنة البداية أكبر من سنة النهاية؛ لا يمكن إنشاء توافق سيارة لهذا الصف.");
+    }
     if (item.model && !item.brand_id) issues.push("يوجد موديل بدون ماركة معروفة؛ لم يتم إنشاء توافق سيارة.");
     if (item.model && likelyBrandModelMismatch(brand, item.model)) {
       issues.push("الموديل يبدو غير متوافق مع الماركة المحددة؛ راجع الماركة والموديل قبل الاعتماد. لم يتم حفظ توافق السيارة تلقائيًا.");
