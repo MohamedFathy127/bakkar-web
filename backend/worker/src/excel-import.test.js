@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   normalize, textValue, numberValue, moneyPiasters, integerValue, yearValue,
   rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned, findDuplicateMatchedTargets, findCandidatesForItems,
-  buildMatchedProductUpdate,
+  buildMatchedProductUpdate, mapExcelHeaders,
 } from "./excel-import.js";
 
 test("normalizes Arabic spelling, diacritics, tatweel and separators", () => {
@@ -169,4 +169,18 @@ test("matched Excel rows replace only supplied notes and keep empty spreadsheet 
   assert.equal(updated.purchase_price_piasters, 0);
   assert.equal(updated.internal_notes, "ملاحظة من برنامج المخزن");
   assert.equal(updated.sale_price_piasters, null);
+});
+
+test("maps reordered Excel columns by exact normalized headers and rejects duplicate/missing headers", () => {
+ const headers=["ملاحظات","كود القطعة","مكان التخزين","الحالة","سعر الشراء (ج.م)","سعر البيع (ج.م)","الكمية","إلى سنة","من سنة","موديل السيارة","اسم القطعة","الماركة"];
+ const mapped=mapExcelHeaders(headers);assert.equal(mapped.missing,false);assert.equal(mapped.duplicate,false);
+ assert.equal(mapped.mapping[0],11);assert.equal(mapped.mapping[1],10);assert.equal(mapped.mapping[11],0);
+ assert.equal(mapExcelHeaders([...headers,"اسم القطعة"]).duplicate,true);assert.equal(mapExcelHeaders(headers.slice(1)).missing,true);
+});
+
+test("header mapper is the same deterministic mapping used by preview validation", () => {
+ const input=["ملاحظات","كود القطعة","مكان التخزين","الحالة","سعر الشراء (ج.م)","سعر البيع (ج.م)","الكمية","إلى سنة","من سنة","موديل السيارة","اسم القطعة","الماركة"];
+ const result=mapExcelHeaders(input);
+ assert.deepEqual(result.mapping,[11,10,9,8,7,6,5,4,3,2,1,0]);
+ assert.equal(result.missing,false);assert.equal(result.duplicate,false);
 });

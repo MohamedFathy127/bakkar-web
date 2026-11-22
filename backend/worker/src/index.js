@@ -21,7 +21,7 @@ const ADMIN_HTML = `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>إدارة مخزون بكار</title>
+<title>مزامنة مخزون بكار</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f5f3ef;color:#242424;font-family:Tahoma,Arial,sans-serif}
 main{max-width:980px;margin:48px auto;padding:20px}.panel{background:#fff;border:1px solid #e5e0d8;border-radius:16px;padding:24px;margin:16px 0;box-shadow:0 8px 28px #00000008}
@@ -50,11 +50,18 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 @media(max-width:640px){main{margin:12px auto;padding:10px}.panel{padding:16px}th,td{font-size:12px;padding:8px}}
 
 
-/* Excel-only owner workspace */
+/* Focused Excel-only owner workspace */
 #dashboard > :not(#excelOnlySection) { display: none !important; }
 #excelOnlySection #backupDataBtn, #excelOnlySection #backupDataMsg { display: none !important; }
+body{background:#f7f5f1}#dashboard{max-width:820px;margin:22px auto}
+#excelOnlySection>h3{font-size:21px;margin:4px 0 14px}#excelOnlySection>.panel{padding:22px}
+#publicationPanel{border-color:#ded5ca}#publicationPanel h3{margin:0;font-size:18px}
+#publicationSummary{background:#f7f4ef;color:#38332e}#publicationList table{min-width:720px}
+#publicationList button{white-space:nowrap}#publicationList td{vertical-align:top}
+#manualPublicationSection{margin-top:18px}#savedImportsList{display:grid;gap:8px;margin-top:12px}#savedImportsList button{text-align:right;white-space:normal}
+@media(max-width:640px){#dashboard{margin:8px auto;padding:8px}#excelOnlySection>.panel{padding:14px}}
 </style></head><body><main>
-<header><div><div class="brand">بكار لقطع غيار السيارات</div><h1>إدارة المخزون</h1><p>هذه لوحة خاصة بالإدارة فقط. الموقع العام لا يحتاج إلى تسجيل دخول.</p></div><button id="logout" class="secondary hidden">تسجيل الخروج</button></header>
+<header><div><div class="brand">بكار لقطع غيار السيارات</div><h1>مزامنة المخزون</h1><p>ارفع ملف Excel، راجع التغييرات، ثم اعتمدها بأمان.</p></div><button id="logout" class="secondary hidden">تسجيل الخروج</button></header>
 <section id="login" class="panel"><h2>تسجيل دخول المالك</h2>
 <label>البريد الإلكتروني</label><input id="email" type="email" autocomplete="username" placeholder="البريد المسجل للمالك">
 <label>كلمة المرور</label><input id="password" type="password" autocomplete="current-password" placeholder="كلمة المرور">
@@ -65,8 +72,8 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <label>كلمة مرور جديدة (12 حرفًا على الأقل)</label><input id="setupPassword" type="password" autocomplete="new-password">
 <button id="setupBtn">إنشاء حساب المالك</button><div id="setupMsg" class="notice hidden"></div></section>
 <section id="dashboard" class="panel hidden">
-<h2>مرحبًا <span id="who"></span></h2>
-<p>لوحة بكار الخاصة بمزامنة بيانات برنامج المخزن، مراجعة الاستيراد، متابعة أداء الموقع وإدارة النسخ الاحتياطية.</p>
+<h2>مزامنة المخزون عبر Excel</h2>
+<p class="muted">الحساب: <span id="who"></span></p>
 <div id="adminMsg" class="notice hidden"></div>
 <div id="duplicateReview" class="panel hidden"></div>
 <div class="section-head"><h3>نظرة عامة على المخزون</h3><span class="muted">مؤشرات مباشرة من قاعدة بيانات الموقع</span></div>
@@ -78,19 +85,28 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
  <section class="panel"><h3>جودة البيانات</h3><div id="analyticsQuality" class="muted">جارٍ التحميل...</div></section>
 </div>
 <section class="panel"><h3>آخر عمليات استيراد Excel</h3><div id="analyticsImports" class="muted">جارٍ التحميل...</div></section>
-<div id="excelOnlySection"><h3>مزامنة المخزون عبر Excel</h3>
+<div id="excelOnlySection"><h3>استيراد وتصدير المخزون</h3>
 <section class="panel">
-<p>استورد ملف برنامج المخزن بعد مراجعة الصفوف، أو صدّر نسخة Excel محدثة من بيانات الموقع.</p>
+<p>ارفع ملف المخزن لمراجعة البيانات قبل اعتمادها، أو نزّل أحدث نسخة من بيانات الموقع.</p>
 <div class="action-row"><button id="exportExcelBtn" type="button" class="secondary">تصدير المخزون إلى Excel</button><button id="backupDataBtn" type="button" class="secondary">تنزيل نسخة احتياطية شاملة</button><span id="exportExcelMsg" class="muted"></span><span id="backupDataMsg" class="muted"></span></div>
 
-<p>ارفع ملف XLSX لمعاينة الصفوف أولًا. لن يتغير المخزون إلا بعد اختيار قرار لكل صف والضغط على اعتماد.</p>
+<p>الخطوة 1: ارفع ملف XLSX. الخطوة 2: راجع التحذيرات والصفوف المتشابهة. الخطوة 3: اعتمد بعد التأكد. لا يتم تعديل المخزون أثناء المعاينة.</p>
 <input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
 <button id="previewExcelBtn" type="button">رفع الملف ومعاينة الصفوف</button>
-<button id="resumeExcelBtn" type="button" class="secondary">فتح معاينة سابقة</button>
+<button id="resumeExcelBtn" type="button" class="secondary">فتح معاينة محفوظة</button>
+<div id="savedImportsList" class="hidden"></div>
 <div id="excelImportMsg" class="notice hidden"></div>
 <div id="excelImportSummary"></div>
 <div id="excelImportRows"></div>
-<button id="applyExcelBtn" type="button" class="hidden">اعتماد القرارات المحددة</button>
+<button id="applyExcelBtn" type="button" class="hidden">اعتماد قرارات الاستيراد</button>
+</section>
+<section class="panel" id="publicationPanel">
+ <div class="section-head"><h3>إظهار المنتجات في الموقع</h3><span class="muted">النشر لا يغيّر الأسعار أو الكميات</span></div>
+ <p>يمكنك نشر المنتجات الجاهزة مرة واحدة. المنتجات التي ينقصها سعر البيع أو تأكيد توافق السيارة لن تُنشر تلقائيًا.</p>
+ <div id="publicationSummary" class="notice">جارٍ فحص المنتجات...</div>
+ <div class="action-row"><button id="publishAllBtn" type="button">نشر كل المنتجات المؤهلة</button><button id="manualPublicationBtn" type="button" class="secondary">مراجعة النشر يدويًا</button></div>
+ <div id="publicationMsg" class="notice hidden"></div>
+ <div id="manualPublicationSection" class="hidden"><label for="publicationSearch">بحث عن قطعة بالاسم أو الكود</label><input id="publicationSearch" type="search" placeholder="اكتب اسم القطعة أو الكود..."><div id="publicationList"></div></div>
 </section></div><details class="panel manual-tools"><summary>أدوات يدوية إضافية (ليست جزءًا من المزامنة اليومية)</summary><h3>إضافة قطعة</h3>
 <form id="productForm" class="panel">
 <label>اسم القطعة بالعربي *</label><input id="partName" required maxlength="160">
@@ -139,7 +155,7 @@ function clearProductEdit(){editingProductId=null;editingVersion=null;editingFit
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{"content-type":"application/json",...(opts.headers||{})},credentials:"same-origin"});const d=await r.json().catch(()=>({error:"استجابة غير مفهومة"}));if(!r.ok){const e=Error(d.error||"حدث خطأ");e.status=r.status;e.code=d.code;e.data=d;throw e}return d}
 function message(id,s){$(id).textContent=s;$(id).classList.remove("hidden")}
 function show(which){["login","setup","dashboard"].forEach(x=>$(x).classList.toggle("hidden",x!==which));$("logout").classList.toggle("hidden",which!=="dashboard")}
-async function refresh(){let d;try{d=await api("/api/admin/me")}catch(e){show("login");message("loginMsg","تعذر التحقق من جلسة الدخول: "+e.message);return false}$("who").textContent=d.user.email;show("dashboard");try{await loadAdmin();return true}catch(e){message("adminMsg","تم تسجيل الدخول بنجاح، لكن تعذر تحميل بيانات لوحة الإدارة: "+e.message+" — أعد تحميل الصفحة أو حاول لاحقًا.");return false}}
+async function refresh(){let d;try{d=await api("/api/admin/me")}catch(e){show("login");message("loginMsg","تعذر التحقق من جلسة الدخول: "+e.message);return false}$("who").textContent=d.user.email;show("dashboard");try{await loadAdmin();return true}catch(e){message("publicationMsg","تعذر تحميل حالة المنتجات: "+e.message+" — أعد تحميل الصفحة أو حاول لاحقًا.");return false}}
 async function openExistingProductForReview(id){
  try{
   const result=await api("/api/admin/products/"+id);const p=result.data;
@@ -301,8 +317,14 @@ $("previewExcelBtn").onclick=async()=>{
  }finally{$("previewExcelBtn").disabled=false}
 };
 $("resumeExcelBtn").onclick=async()=>{
- const id=prompt("أدخل رقم دفعة المعاينة المحفوظة:");if(!id)return;
- try{await loadImportBatch(id.trim())}catch(e){importMessage(e.message)}
+ try{
+  const result=await api("/api/admin/imports/recent");
+  const list=$("savedImportsList");
+  if(!result.data?.length){list.textContent="لا توجد معاينات محفوظة.";list.classList.remove("hidden");return}
+  list.classList.remove("hidden");
+  list.innerHTML='<p class="muted">اختر ملفًا لفتح مراجعته:</p>'+result.data.map(x=>'<button type="button" class="secondary saved-import-btn" data-id="'+escapeHtml(x.id)+'">'+escapeHtml(x.filename)+' — '+escapeHtml(x.status)+' — '+Number(x.total_rows).toLocaleString("ar-EG")+' صف — '+new Date(x.created_at).toLocaleString("ar-EG")+'</button>').join("");
+  document.querySelectorAll(".saved-import-btn").forEach(btn=>btn.onclick=async()=>{try{await loadImportBatch(btn.dataset.id);list.classList.add("hidden")}catch(e){importMessage(e.message)}});
+ }catch(e){importMessage(e.message)}
 };
 $("applyExcelBtn").onclick=async()=>{
  try{
@@ -322,42 +344,38 @@ $("applyExcelBtn").onclick=async()=>{
  }catch(e){importMessage(e.message)}finally{$("applyExcelBtn").disabled=false}
 };
 async function loadAdmin(){
- const [p,m,h,a]=await Promise.all([api("/api/admin/products"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12"),api("/api/admin/analytics")]);
- const fmtNumber=value=>Number(value||0).toLocaleString("ar-EG");
- const fmtMoney=value=>(Number(value||0)/100).toLocaleString("ar-EG",{minimumFractionDigits:2,maximumFractionDigits:2})+" ج.م";
- const o=a.overview||{},s=a.stock||{};
- const metrics=[
-  ["المنتجات النشطة",fmtNumber(o.active_products),"سجلات غير مؤرشفة"],
-  ["إجمالي الوحدات",fmtNumber(s.total_units),"في جميع أماكن التخزين"],
-  ["القطع المنشورة",fmtNumber(o.public_products),"ظاهرة في الكتالوج العام"],
-  ["توافقات تحتاج مراجعة",fmtNumber(o.with_pending_fitment),"لا تُنشر قبل التأكيد"],
-  ["قيمة الشراء التقديرية",fmtMoney(s.estimated_purchase_value_piasters),"حسب سعر الشراء المسجل"],
-  ["قيمة البيع التقديرية",fmtMoney(s.estimated_sale_value_piasters),"لو تم بيع الكميات الحالية"],
-  ["قطع بدون كود",fmtNumber(o.missing_codes),"تحتاج استكمالًا عند توفر الكود"],
- ];
- $("analyticsCards").innerHTML=metrics.map((x,i)=>'<div class="metric"><span>'+x[0]+'</span><strong>'+x[1]+'</strong><small>'+x[2]+'</small></div>').join("");
- const renderBars=(items,labelKey,valueKey)=>{
-  const max=Math.max(1,...items.map(x=>Number(x[valueKey]||0)));
-  return items.length?items.map(x=>{
-   const value=Number(x[valueKey]||0),width=Math.max(0,Math.min(100,value/max*100));
-   return '<div class="bar-row"><div class="bar-meta"><span>'+escapeHtml(x[labelKey]||"غير محدد")+'</span><strong>'+fmtNumber(value)+'</strong></div><div class="bar-track"><div class="bar-fill" style="width:'+width.toFixed(1)+'%"></div></div></div>';
-  }).join(""):'<p class="muted">لا توجد بيانات كافية حتى الآن.</p>';
- };
- $("analyticsLocations").innerHTML=renderBars(a.by_location||[],"name","total_units");
- $("analyticsBrands").innerHTML=renderBars(a.by_brand||[],"name_ar","product_count");
- const movementNames={in:"إضافة",out:"صرف",adjustment:"تسوية",transfer_in:"تحويل وارد",transfer_out:"تحويل صادر"};
- $("analyticsMovements").innerHTML=(a.movements_30d||[]).length?'<table><thead><tr><th>نوع الحركة</th><th>عدد العمليات</th><th>الوحدات</th></tr></thead><tbody>'+(a.movements_30d||[]).map(x=>'<tr><td>'+escapeHtml(movementNames[x.movement_type]||x.movement_type)+'</td><td>'+fmtNumber(x.movement_count)+'</td><td>'+fmtNumber(x.units)+'</td></tr>').join("")+'</tbody></table>':'<p class="muted">لا توجد حركات خلال آخر 30 يومًا.</p>';
- $("analyticsQuality").innerHTML='<p>بدون سعر بيع: <strong>'+fmtNumber(o.missing_sale_prices)+'</strong></p><p>بدون سعر شراء: <strong>'+fmtNumber(o.missing_purchase_prices)+'</strong></p><p>سعر الشراء أعلى من البيع: <strong>'+fmtNumber(o.purchase_exceeds_sale)+'</strong></p><p>بدون توافق سيارة: <strong>'+fmtNumber(o.without_fitment)+'</strong></p><p>أرصدة بدون سعر شراء: <strong>'+fmtNumber(s.balances_without_purchase_price)+'</strong></p>';
- $("analyticsImports").innerHTML=(a.recent_imports||[]).length?'<table><thead><tr><th>الملف</th><th>الحالة</th><th>صفوف</th><th>إنشاء</th><th>تحديث</th><th>تخطي</th><th>أخطاء</th></tr></thead><tbody>'+(a.recent_imports||[]).map(x=>'<tr><td>'+escapeHtml(x.filename)+'</td><td>'+escapeHtml(x.status)+'</td><td>'+fmtNumber(x.total_rows)+'</td><td>'+fmtNumber(x.created_count)+'</td><td>'+fmtNumber(x.updated_count)+'</td><td>'+fmtNumber(x.skipped_count)+'</td><td>'+fmtNumber(x.error_count)+'</td></tr>').join("")+'</tbody></table>':'<p class="muted">لا توجد عمليات استيراد محفوظة.</p>';
- $("brandId").innerHTML='<option value="">اختر الماركة</option>'+m.brands.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name_ar)+'</option>').join("");
- $("movementProduct").innerHTML='<option value="">اختر القطعة</option>'+p.data.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.part_name_ar)+' — '+escapeHtml(x.condition||"الحالة غير محددة")+' — رصيد إجمالي: '+Number(x.total_quantity||0)+' — #'+escapeHtml(x.id.slice(0,8))+'</option>').join("");
- $("movementLocation").innerHTML='<option value="">اختر المخزن</option>'+m.locations.filter(x=>x.active).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join("");
- $("locations").textContent=m.locations.length?m.locations.map(x=>x.name+(x.active?"":" (غير نشط)")).join(" • "):"لم تتم إضافة أماكن تخزين بعد.";
- $("products").innerHTML=p.data.length?'<table><thead><tr><th>القطعة</th><th>الحالة</th><th>الرصيد</th><th>سعر البيع</th><th>إجراء</th></tr></thead><tbody>'+p.data.map(x=>'<tr><td>'+escapeHtml(x.part_name_ar)+'</td><td>'+escapeHtml(x.condition||"—")+'</td><td>'+Number(x.total_quantity||0)+'</td><td>'+(x.sale_price_piasters==null?"—":(Number(x.sale_price_piasters)/100).toFixed(2)+" ج.م")+'</td><td><button class="secondary editBtn" data-id="'+escapeHtml(x.id)+'">تعديل</button> <button class="secondary archiveBtn" data-id="'+escapeHtml(x.id)+'" data-version="'+Number(x.version)+'">أرشفة</button></td></tr>').join("")+'</tbody></table>':"لا توجد منتجات مسجلة حتى الآن.";
- $("movements").innerHTML=h.data.length?'<table><thead><tr><th>القطعة</th><th>المخزن</th><th>الحركة</th><th>الكمية</th><th>الرصيد بعدها</th></tr></thead><tbody>'+h.data.map(x=>'<tr><td>'+escapeHtml(x.part_name_ar)+'</td><td>'+escapeHtml(x.location_name)+'</td><td>'+({in:"إضافة",out:"صرف",adjustment:"تسوية"}[x.movement_type]||x.movement_type)+'</td><td>'+Number(x.quantity_delta)+'</td><td>'+Number(x.balance_after)+'</td></tr>').join("")+'</tbody></table>':"لا توجد حركات مخزون حتى الآن.";
- document.querySelectorAll(".editBtn").forEach(btn=>btn.onclick=()=>openExistingProductForReview(btn.dataset.id));
- document.querySelectorAll(".archiveBtn").forEach(btn=>btn.onclick=async()=>{if(!confirm("أرشفة القطعة؟ ستختفي من الكتالوج العام مع الاحتفاظ بسجلها."))return;try{await api("/api/admin/products/"+btn.dataset.id,{method:"DELETE",body:JSON.stringify({version:Number(btn.dataset.version)})});message("adminMsg","تمت أرشفة القطعة.");await loadAdmin()}catch(e){message("adminMsg",e.message)}});
+ const result=await api("/api/admin/products/publication-status"),products=Array.isArray(result.data)?result.data:[];
+ const eligible=products.filter(p=>p.publication_state==="eligible"&&!p.is_public),published=products.filter(p=>Boolean(p.is_public)),blocked=products.filter(p=>!p.is_public&&p.publication_state!=="eligible");
+ $("publicationSummary").textContent="إجمالي المنتجات: "+products.length.toLocaleString("ar-EG")+" | منشور: "+published.length.toLocaleString("ar-EG")+" | جاهز للنشر: "+eligible.length.toLocaleString("ar-EG")+" | يحتاج استكمالًا: "+blocked.length.toLocaleString("ar-EG")+(result.truncated?" | القائمة تعرض أول 500 منتج فقط؛ أكمل النشر على دفعات.":"");
+ $("publishAllBtn").disabled=eligible.length===0;$("publishAllBtn").textContent=eligible.length?"نشر "+eligible.length.toLocaleString("ar-EG")+" منتج مؤهل":"لا توجد منتجات جاهزة للنشر";
+ const money=v=>v==null?"غير مسجل":(Number(v)/100).toLocaleString("ar-EG",{minimumFractionDigits:2,maximumFractionDigits:2})+" ج.م";
+ const fitmentText=p=>(p.fitments||[]).map(f=>[f.brand_name_ar,f.model,[f.year_from||"؟",f.year_to||"؟"].join("–"),f.compatibility_status==="confirmed"?"مؤكد":f.compatibility_status==="unconfirmed"?"غير مؤكد":"بانتظار التأكيد"].join(" / ")).join("، ");
+ const reason=p=>p.publication_state==="missing_sale_price"?"أضف سعر البيع في ملف Excel":p.publication_state==="missing_fitment"?"أضف ماركة وموديل السيارة في ملف Excel":p.publication_state==="pending_fitment"?"راجع توافق السيارة وأكّده يدويًا":"جاهز للنشر";
+ const render=()=>{const q=($("publicationSearch").value||"").trim().toLocaleLowerCase("ar"),rows=products.filter(p=>!q||[p.part_name_ar,p.part_code].join(" ").toLocaleLowerCase("ar").includes(q));
+  $("publicationList").innerHTML=rows.length?'<div style="overflow-x:auto"><table><thead><tr><th>القطعة</th><th>سعر البيع</th><th>توافق السيارة</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>'+rows.map(p=>{
+   const status=p.is_public?"منشور":reason(p);let action=p.is_public?'<button type="button" class="secondary publication-action" data-id="'+escapeHtml(p.id)+'" data-action="hide">إخفاء</button>':p.publication_state==="eligible"?'<button type="button" class="publication-action" data-id="'+escapeHtml(p.id)+'" data-action="publish">نشر يدوي</button>':p.publication_state==="pending_fitment"?'<button type="button" class="publication-action" data-id="'+escapeHtml(p.id)+'" data-action="confirm_and_publish">تأكيد التوافق والنشر</button>':'<button type="button" class="secondary" disabled>استكمل البيانات في Excel</button>';
+   return '<tr><td><strong>'+escapeHtml(p.part_name_ar)+'</strong><br><small>'+escapeHtml(p.part_code||"بدون كود")+'</small></td><td>'+money(p.sale_price_piasters)+'</td><td>'+escapeHtml(fitmentText(p)||"غير مسجل")+'</td><td>'+escapeHtml(status)+'</td><td>'+action+'</td></tr>';
+  }).join("")+'</tbody></table></div>':'<p class="muted">لا توجد نتائج مطابقة.</p>';
+  document.querySelectorAll(".publication-action").forEach(btn=>btn.onclick=()=>changePublication(btn.dataset.id,btn.dataset.action));};
+ render();$("publicationSearch").oninput=render;
 }
+async function revealManualPublication(){$("manualPublicationSection").classList.remove("hidden");$("manualPublicationSection").scrollIntoView({behavior:"smooth",block:"nearest"});}
+async function changePublication(productId,action){
+ const data=await api("/api/admin/products/publication-status"),product=(data.data||[]).find(p=>p.id===productId);
+ if(!product){message("publicationMsg","القطعة لم تعد موجودة. حدّث القائمة.");return}
+ const promptText=action==="hide"?"هل تريد إخفاء هذه القطعة من الموقع؟":action==="confirm_and_publish"?"هل راجعت توافق السيارة التالي وتؤكد صحته؟\\n\\n"+(product.fitments||[]).map(f=>[f.brand_name_ar,f.model,f.year_from||"؟",f.year_to||"؟"].join(" / ")).join("\\n")+"\\n\\nسيتم تأكيد كل توافقات هذه القطعة ونشرها.":"هل تريد نشر "+product.part_name_ar+" في الموقع؟";
+ if(!confirm(promptText))return;
+ try{await api("/api/admin/products/publication",{method:"POST",body:JSON.stringify({product_id:productId,action})});message("publicationMsg",action==="hide"?"تم إخفاء المنتج.":"تم نشر المنتج بنجاح.");await loadAdmin();}catch(e){message("publicationMsg",e.message)}
+}
+$("publishAllBtn").onclick=async()=>{
+ const data=await api("/api/admin/products/publication-status"),eligible=(data.data||[]).filter(p=>!p.is_public&&p.publication_state==="eligible");
+ if(!eligible.length){message("publicationMsg","لا توجد منتجات مستوفية لشروط النشر حاليًا. راجع قائمة النشر اليدوي.");await revealManualPublication();return}
+ if(!confirm("هل تريد نشر "+(data.truncated?"المنتجات المؤهلة المعروضة وعددها ":"كل المنتجات المؤهلة وعددها ")+eligible.length+"؟\\n\\nلن يتم نشر أي قطعة بدون سعر بيع أو بدون توافق سيارة مؤكد. لن تتغير الأسعار أو الكميات.")){await revealManualPublication();return}
+ try{$("publishAllBtn").disabled=true;const applied=await api("/api/admin/products/publication",{method:"POST",body:JSON.stringify({scope:"eligible"})});message("publicationMsg","تم نشر "+Number(applied.published||0)+" منتج. لم يتم نشر "+Number(applied.skipped||0)+" منتج لأنه لم يعد مستوفيًا للشروط أو تم تعديله بالتزامن."+(applied.more_eligible?" توجد منتجات مؤهلة أخرى؛ اضغط الزر مرة ثانية لاستكمالها.":""));await loadAdmin();}
+ catch(e){message("publicationMsg",e.message)}finally{$("publishAllBtn").disabled=false}
+};
+$("manualPublicationBtn").onclick=revealManualPublication;
+
 $("exportExcelBtn").onclick=async()=>{
  try{
   $("exportExcelBtn").disabled=true;$("exportExcelMsg").textContent="جارٍ تجهيز ملف Excel...";

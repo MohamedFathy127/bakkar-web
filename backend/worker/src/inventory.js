@@ -234,6 +234,96 @@ async function handleInventoryAdmin(request, url, env, session) {
     });
   }
 
+  if (path === "/api/admin/products/publication-status" && method === "GET") {
+    const result = await env.DB.prepare(`
+      SELECT p.id,p.part_name_ar,p.part_code,p.sale_price_piasters,p.is_public,p.version,
+        COALESCE((SELECT json_group_array(json_object('brand_name_ar',b.name_ar,'model',f.model,'year_from',f.year_from,'year_to',f.year_to,'compatibility_status',f.compatibility_status))
+          FROM product_fitments f JOIN brands b ON b.id=f.brand_id WHERE f.product_id=p.id),'[]') AS fitments_json,
+        CASE WHEN p.sale_price_piasters IS NULL THEN 'missing_sale_price'
+          WHEN NOT EXISTS (SELECT 1 FROM product_fitments f WHERE f.product_id=p.id) THEN 'missing_fitment'
+          WHEN EXISTS (SELECT 1 FROM product_fitments f WHERE f.product_id=p.id AND f.compatibility_status IS NOT 'confirmed') THEN 'pending_fitment'
+          ELSE 'eligible' END AS publication_state
+      FROM products p WHERE p.archived_at IS NULL ORDER BY p.updated_at DESC,p.id ASC LIMIT 501
+    `).all();
+    const rawRows=result.results||[],data=rawRows.slice(0,500).map(row=>({...row,is_public:Boolean(row.is_public),fitments:JSON.parse(row.fitments_json||"[]")}));
+    return reply({data,truncated:rawRows.length>500});
+  }
+
+  if (path === "/api/admin/products/publication" && method === "POST") {
+    if (!sameOrigin(request)) return reply({error:"Invalid request origin."},403);
+    const parsed=await bodyJson(request,16384);if(parsed.error)return reply({error:parsed.error},400);
+    const input=parsed.value;
+    if(input.scope==="eligible"){
+      const candidates=await env.DB.prepare(`
+        SELECT p.id,p.version FROM products p
+        WHERE p.archived_at IS NULL AND p.is_public=0 AND p.sale_price_piasters IS NOT NULL
+          AND EXISTS(SELECT 1 FROM product_fitments f WHERE f.product_id=p.id)
+          AND NOT EXISTS(SELECT 1 FROM product_fitments f WHERE f.product_id=p.id AND f.compatibility_status IS NOT 'confirmed')
+        ORDER BY p.updated_at DESC,p.id ASC LIMIT 501
+      `).all();
+      const rawProducts=candidates.results||[],products=rawProducts.slice(0,500),moreEligible=rawProducts.length>500;let published=0;
+      for(let offset=0;offset<products.length;offset+=40){
+        const chunk=products.slice(offset,offset+40),now=new Date().toISOString(),statements=[];
+        for(const product of chunk){
+          statements.push(env.DB.prepare(`
+            UPDATE products SET is_public=1,version=version+1,updated_at=?
+            WHERE id=? AND version=? AND archived_at IS NULL AND is_public=0 AND sale_price_piasters IS NOT NULL
+              AND EXISTS(SELECT 1 FROM product_fitments f WHERE f.product_id=products.id)
+              AND NOT EXISTS(SELECT 1 FROM product_fitments f WHERE f.product_id=products.id AND f.compatibility_status IS NOT 'confirmed')
+          `).bind(now,product.id,product.version));
+          statements.push(env.DB.prepare(`
+            INSERT INTO audit_log(id,entity_type,entity_id,action,before_json,after_json,actor_email)
+            SELECT ?,'product',?,'published',?,?,?
+            WHERE EXISTS(SELECT 1 FROM products WHERE id=? AND version=? AND is_public=1 AND updated_at=?)
+          `).bind(crypto.randomUUID(),product.id,JSON.stringify({is_public:0,version:product.version}),JSON.stringify({is_public:1,version:product.version+1}),session.email,product.id,product.version+1,now));
+        }
+        const results=await env.DB.batch(statements);
+        for(let i=0;i<results.length;i+=2)if(Number(results[i]?.meta?.changes||0)>0)published++;
+      }
+      return reply({ok:true,published,skipped:products.length-published,scanned:products.length,more_eligible:moreEligible});
+    }
+    const productId=typeof input.product_id==="string"?input.product_id:"",action=input.action;
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId)||!["publish","confirm_and_publish","hide"].includes(action))
+      return reply({error:"بيانات النشر غير صالحة."},400);
+    const product=await env.DB.prepare("SELECT id,version,is_public,sale_price_piasters FROM products WHERE id=? AND archived_at IS NULL LIMIT 1").bind(productId).first();
+    if(!product)return reply({error:"المنتج غير موجود أو تم أرشفته."},404);
+    if(Boolean(product.is_public)===(action!=="hide"))return reply({error:action==="hide"?"المنتج مخفي بالفعل.":"المنتج منشور بالفعل."},409);
+    if(action!=="hide"){
+      if(product.sale_price_piasters===null)return reply({error:"لا يمكن نشر المنتج قبل تسجيل سعر البيع في ملف Excel."},409);
+      const fitments=await env.DB.prepare("SELECT id,brand_id,model,year_from,year_to,compatibility_status FROM product_fitments WHERE product_id=? ORDER BY id").bind(productId).all();
+      const rows=fitments.results||[];if(!rows.length)return reply({error:"لا يمكن نشر المنتج قبل إضافة توافق سيارة صحيح من ملف Excel."},409);
+      if(action==="publish"&&rows.some(f=>f.compatibility_status!=="confirmed"))return reply({error:"توافق السيارة لم يتم تأكيده. استخدم خيار (تأكيد التوافق والنشر) بعد مراجعته."},409);
+      const now=new Date().toISOString(),before={is_public:Boolean(product.is_public),fitments:rows.map(f=>({id:f.id,compatibility_status:f.compatibility_status}))};
+      const statements=[env.DB.prepare(`
+        UPDATE products SET is_public=1,version=version+1,updated_at=?
+        WHERE id=? AND version=? AND archived_at IS NULL AND is_public=0 AND sale_price_piasters IS NOT NULL
+          AND EXISTS(SELECT 1 FROM product_fitments WHERE product_id=?)
+      `).bind(now,productId,product.version,productId)];
+      if(action==="confirm_and_publish")statements.push(env.DB.prepare(`
+        UPDATE product_fitments SET compatibility_status='confirmed',updated_at=?
+        WHERE product_id=? AND EXISTS(SELECT 1 FROM products WHERE id=? AND version=? AND is_public=1 AND updated_at=?)
+      `).bind(now,productId,productId,product.version+1,now));
+      statements.push(env.DB.prepare(`
+        INSERT INTO audit_log(id,entity_type,entity_id,action,before_json,after_json,actor_email)
+        SELECT ?,'product',?,'published',?,?,?
+        WHERE EXISTS(SELECT 1 FROM products WHERE id=? AND version=? AND is_public=1 AND updated_at=?)
+      `).bind(crypto.randomUUID(),productId,JSON.stringify(before),JSON.stringify({is_public:1,fitments_confirmed:action==="confirm_and_publish"}),session.email,productId,product.version+1,now));
+      const results=await env.DB.batch(statements);
+      if(!results[0]?.meta?.changes)return reply({error:"تم تعديل المنتج بالتزامن. حدّث القائمة ثم أعد المحاولة."},409);
+      return reply({ok:true,published:true,fitments_confirmed:action==="confirm_and_publish"});
+    }
+    const now=new Date().toISOString(),results=await env.DB.batch([
+      env.DB.prepare("UPDATE products SET is_public=0,version=version+1,updated_at=? WHERE id=? AND version=? AND archived_at IS NULL AND is_public=1").bind(now,productId,product.version),
+      env.DB.prepare(`
+        INSERT INTO audit_log(id,entity_type,entity_id,action,before_json,after_json,actor_email)
+        SELECT ?,'product',?,'hidden',?,?,?
+        WHERE EXISTS(SELECT 1 FROM products WHERE id=? AND version=? AND is_public=0 AND updated_at=?)
+      `).bind(crypto.randomUUID(),productId,JSON.stringify({is_public:1,version:product.version}),JSON.stringify({is_public:0,version:product.version+1}),session.email,productId,product.version+1,now)
+    ]);
+    if(!results[0]?.meta?.changes)return reply({error:"تم تعديل المنتج بالتزامن. حدّث القائمة ثم أعد المحاولة."},409);
+    return reply({ok:true,hidden:true});
+  }
+
   const detailMatch = path.match(/^\/api\/admin\/products\/([0-9a-f-]{36})$/i);
   if (detailMatch && method === "GET") {
     const id = detailMatch[1];
