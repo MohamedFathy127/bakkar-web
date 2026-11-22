@@ -87,12 +87,14 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <div id="excelImportSummary"></div>
 <div id="excelImportRows"></div>
 <button id="applyExcelBtn" type="button" class="hidden">اعتماد القرارات المحددة</button>
-</section><details class="panel manual-tools"><summary>أدوات يدوية إضافية (ليست جزءًا من المزامنة اليومية)</summary><h3>إضافة قطعة</h3>
+</section><details class="panel manual-tools" open><summary>إدارة المنتجات والمخزون — أدوات الإدارة اليومية</summary><h3>إضافة قطعة أو تعديل بياناتها</h3>
 <form id="productForm" class="panel">
 <label>اسم القطعة بالعربي *</label><input id="partName" required maxlength="160">
 <label>اسم القطعة بالإنجليزي</label><input id="partNameEn" maxlength="160">
 <label>كود القطعة</label><input id="partCode" maxlength="80">
 <label>الحالة</label><input id="condition" placeholder="جديد / استيراد / مستعمل" maxlength="40">
+<label>التصنيف</label><select id="productCategory"><option value="">بدون تصنيف</option></select>
+<label>ملاحظات داخلية (لا تظهر للعملاء)</label><textarea id="internalNotes" rows="3" maxlength="2000" placeholder="ملاحظات خاصة بالإدارة فقط"></textarea>
 <div class="formgrid">
 <div><label>سعر البيع (جنيه)</label><input id="salePrice" type="number" min="0" step="0.01"></div>
 <div><label>سعر الشراء (جنيه)</label><input id="purchasePrice" type="number" min="0" step="0.01"></div>
@@ -125,12 +127,14 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <label>مرجع (اختياري)</label><input id="movementReference" maxlength="100">
 <button type="submit">تسجيل الحركة</button>
 </form>
-<h3>المنتجات المسجلة</h3><div id="products">جارٍ التحميل...</div>
+<h3>كل المنتجات — المنشورة والخاصة</h3>
+<div class="formgrid"><div><label>بحث بالاسم أو الكود أو الملاحظات</label><input id="productSearch" type="search" placeholder="اكتب اسم القطعة أو كودها..."></div><div><label>حالة النشر</label><select id="productVisibility"><option value="all">كل المنتجات</option><option value="public">المنشورة فقط</option><option value="private">الخاصة فقط</option><option value="missing">بدون سعر بيع</option></select></div></div>
+<div id="products">جارٍ تحميل المنتجات...</div>
 <h3>آخر حركات المخزون</h3><div id="movements">جارٍ التحميل...</div>
 </details></section>
 <script>
 const $=id=>document.getElementById(id);
-let editingProductId=null,editingVersion=null,editingFitments=[],editingCategoryId=null,editingAliases="",editingNotes="";
+let editingProductId=null,editingVersion=null,editingFitments=[],editingCategoryId=null,editingAliases="",editingNotes="",adminProducts=[];
 function clearProductEdit(){editingProductId=null;editingVersion=null;editingFitments=[];editingCategoryId=null;editingAliases="";editingNotes="";$("productForm").reset();$("saveProductBtn").textContent="حفظ القطعة";$("cancelEditBtn").classList.add("hidden");$("duplicateReview").classList.add("hidden")}
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{"content-type":"application/json",...(opts.headers||{})},credentials:"same-origin"});const d=await r.json().catch(()=>({error:"استجابة غير مفهومة"}));if(!r.ok){const e=Error(d.error||"حدث خطأ");e.status=r.status;e.code=d.code;e.data=d;throw e}return d}
 function message(id,s){$(id).textContent=s;$(id).classList.remove("hidden")}
@@ -141,7 +145,7 @@ async function openExistingProductForReview(id){
   const result=await api("/api/admin/products/"+id);const p=result.data;
   editingProductId=p.id;editingVersion=Number(p.version);editingFitments=(p.fitments||[]).map(f=>({brand_id:f.brand_id,model:f.model,year_from:f.year_from,year_to:f.year_to,compatibility_status:f.compatibility_status}));
   editingCategoryId=p.category_id||null;editingAliases=p.aliases||"";editingNotes=p.internal_notes||"";
-  $("partName").value=p.part_name_ar||"";$("partNameEn").value=p.part_name_en||"";$("partCode").value=p.part_code||"";$("condition").value=p.condition||"";
+  $("partName").value=p.part_name_ar||"";$("partNameEn").value=p.part_name_en||"";$("partCode").value=p.part_code||"";$("condition").value=p.condition||"";$("productCategory").value=p.category_id||"";$("internalNotes").value=p.internal_notes||"";
   $("salePrice").value=p.sale_price_piasters==null?"":(Number(p.sale_price_piasters)/100).toFixed(2);
   $("purchasePrice").value=p.purchase_price_piasters==null?"":(Number(p.purchase_price_piasters)/100).toFixed(2);
   const f=editingFitments[0];$("brandId").value=f?.brand_id||"";$("vehicleModel").value=f?.model||"";$("yearFrom").value=f?.year_from||"";$("yearTo").value=f?.year_to||"";$("fitmentStatus").value=f?.compatibility_status||"pending";$("isPublic").checked=Boolean(p.is_public);
@@ -159,7 +163,7 @@ function buildProductPayload(){
  const sale=egpToPiasters("salePrice"),purchase=egpToPiasters("purchasePrice");
  if(sale===undefined||purchase===undefined)throw Error("راجع الأسعار.");
  if($("isPublic").checked&&sale===null)throw Error("لا يمكن نشر القطعة قبل إضافة سعر البيع. يمكنك حفظها كقطعة خاصة ثم إضافة السعر لاحقًا.");
- const payload={part_name_ar:$("partName").value,part_name_en:$("partNameEn").value,part_code:$("partCode").value,condition:$("condition").value,sale_price_piasters:sale,purchase_price_piasters:purchase,fitments,is_public:$("isPublic").checked,category_id:editingCategoryId,aliases:editingAliases,internal_notes:editingNotes};
+ const payload={part_name_ar:$("partName").value,part_name_en:$("partNameEn").value,part_code:$("partCode").value,condition:$("condition").value,sale_price_piasters:sale,purchase_price_piasters:purchase,fitments,is_public:$("isPublic").checked,category_id:$("productCategory").value||null,aliases:editingAliases,internal_notes:$("internalNotes").value};
  if(editingProductId)payload.version=editingVersion;
  return payload;
 }
@@ -317,8 +321,26 @@ $("applyExcelBtn").onclick=async()=>{
   await loadImportBatch(currentImportBatchId);await loadAdmin();
  }catch(e){importMessage(e.message)}finally{$("applyExcelBtn").disabled=false}
 };
+function renderProductsTable(){
+ const query=$("productSearch").value.trim().toLocaleLowerCase("ar");
+ const visibility=$("productVisibility").value;
+ const rows=adminProducts.filter(x=>{
+  const hay=[x.part_name_ar,x.part_name_en,x.part_code,x.condition,x.internal_notes,x.category_name_ar].join(" ").toLocaleLowerCase("ar");
+  if(query&&!hay.includes(query))return false;
+  if(visibility==="public"&&!x.is_public)return false;
+  if(visibility==="private"&&x.is_public)return false;
+  if(visibility==="missing"&&x.sale_price_piasters!==null)return false;
+  return true;
+ });
+ const money=value=>value==null?"—":(Number(value)/100).toLocaleString("ar-EG",{minimumFractionDigits:2,maximumFractionDigits:2})+" ج.م";
+ $("products").innerHTML=rows.length?'<p class="muted">المعروض '+rows.length.toLocaleString("ar-EG")+' من '+adminProducts.length.toLocaleString("ar-EG")+' قطعة. الأسعار والملاحظات في هذا الجدول خاصة بالإدارة.</p><div style="overflow-x:auto"><table><thead><tr><th>القطعة / الكود</th><th>الحالة والتصنيف</th><th>النشر</th><th>سعر البيع</th><th>سعر الشراء</th><th>الرصيد</th><th>ملاحظات داخلية</th><th>إجراء</th></tr></thead><tbody>'+rows.map(x=>'<tr><td><strong>'+escapeHtml(x.part_name_ar)+'</strong><br><small>'+escapeHtml(x.part_code||"بدون كود")+'</small></td><td>'+escapeHtml(x.condition||"—")+'<br><small>'+escapeHtml(x.category_name_ar||"بدون تصنيف")+'</small></td><td>'+(x.is_public?'<strong>منشورة</strong>':'خاصة')+'</td><td>'+money(x.sale_price_piasters)+'</td><td>'+money(x.purchase_price_piasters)+'</td><td>'+Number(x.total_quantity||0).toLocaleString("ar-EG")+'</td><td>'+escapeHtml((x.internal_notes||"—").slice(0,90))+'</td><td><button class="secondary editBtn" data-id="'+escapeHtml(x.id)+'">تعديل</button> <button class="secondary archiveBtn" data-id="'+escapeHtml(x.id)+'" data-version="'+Number(x.version)+'">أرشفة</button></td></tr>').join("")+'</tbody></table></div>':"لا توجد منتجات مطابقة للبحث أو الفلتر.";
+ document.querySelectorAll(".editBtn").forEach(btn=>btn.onclick=()=>openExistingProductForReview(btn.dataset.id));
+ document.querySelectorAll(".archiveBtn").forEach(btn=>btn.onclick=async()=>{if(!confirm("أرشفة القطعة؟ ستختفي من الكتالوج العام مع الاحتفاظ بسجلها."))return;try{await api("/api/admin/products/"+btn.dataset.id,{method:"DELETE",body:JSON.stringify({version:Number(btn.dataset.version)})});message("adminMsg","تمت أرشفة القطعة.");await loadAdmin()}catch(e){message("adminMsg",e.message)}});
+}
+$("productSearch").addEventListener("input",renderProductsTable);
+$("productVisibility").addEventListener("change",renderProductsTable);
 async function loadAdmin(){
- const [p,m,h,a]=await Promise.all([api("/api/admin/products"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12"),api("/api/admin/analytics")]);
+ const [p,m,h,a]=await Promise.all([api("/api/admin/products?limit=100"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12"),api("/api/admin/analytics")]);
  const fmtNumber=value=>Number(value||0).toLocaleString("ar-EG");
  const fmtMoney=value=>(Number(value||0)/100).toLocaleString("ar-EG",{minimumFractionDigits:2,maximumFractionDigits:2})+" ج.م";
  const o=a.overview||{},s=a.stock||{};
@@ -346,10 +368,11 @@ async function loadAdmin(){
  $("analyticsQuality").innerHTML='<p>بدون سعر بيع: <strong>'+fmtNumber(o.missing_sale_prices)+'</strong></p><p>بدون سعر شراء: <strong>'+fmtNumber(o.missing_purchase_prices)+'</strong></p><p>سعر الشراء أعلى من البيع: <strong>'+fmtNumber(o.purchase_exceeds_sale)+'</strong></p><p>بدون توافق سيارة: <strong>'+fmtNumber(o.without_fitment)+'</strong></p><p>أرصدة بدون سعر شراء: <strong>'+fmtNumber(s.balances_without_purchase_price)+'</strong></p>';
  $("analyticsImports").innerHTML=(a.recent_imports||[]).length?'<table><thead><tr><th>الملف</th><th>الحالة</th><th>صفوف</th><th>إنشاء</th><th>تحديث</th><th>تخطي</th><th>أخطاء</th></tr></thead><tbody>'+(a.recent_imports||[]).map(x=>'<tr><td>'+escapeHtml(x.filename)+'</td><td>'+escapeHtml(x.status)+'</td><td>'+fmtNumber(x.total_rows)+'</td><td>'+fmtNumber(x.created_count)+'</td><td>'+fmtNumber(x.updated_count)+'</td><td>'+fmtNumber(x.skipped_count)+'</td><td>'+fmtNumber(x.error_count)+'</td></tr>').join("")+'</tbody></table>':'<p class="muted">لا توجد عمليات استيراد محفوظة.</p>';
  $("brandId").innerHTML='<option value="">اختر الماركة</option>'+m.brands.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name_ar)+'</option>').join("");
+ $("productCategory").innerHTML='<option value="">بدون تصنيف</option>'+m.categories.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name_ar)+'</option>').join("");
  $("movementProduct").innerHTML='<option value="">اختر القطعة</option>'+p.data.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.part_name_ar)+' — '+escapeHtml(x.condition||"الحالة غير محددة")+' — رصيد إجمالي: '+Number(x.total_quantity||0)+' — #'+escapeHtml(x.id.slice(0,8))+'</option>').join("");
  $("movementLocation").innerHTML='<option value="">اختر المخزن</option>'+m.locations.filter(x=>x.active).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join("");
  $("locations").textContent=m.locations.length?m.locations.map(x=>x.name+(x.active?"":" (غير نشط)")).join(" • "):"لم تتم إضافة أماكن تخزين بعد.";
- $("products").innerHTML=p.data.length?'<table><thead><tr><th>القطعة</th><th>الحالة</th><th>الرصيد</th><th>سعر البيع</th><th>إجراء</th></tr></thead><tbody>'+p.data.map(x=>'<tr><td>'+escapeHtml(x.part_name_ar)+'</td><td>'+escapeHtml(x.condition||"—")+'</td><td>'+Number(x.total_quantity||0)+'</td><td>'+(x.sale_price_piasters==null?"—":(Number(x.sale_price_piasters)/100).toFixed(2)+" ج.م")+'</td><td><button class="secondary editBtn" data-id="'+escapeHtml(x.id)+'">تعديل</button> <button class="secondary archiveBtn" data-id="'+escapeHtml(x.id)+'" data-version="'+Number(x.version)+'">أرشفة</button></td></tr>').join("")+'</tbody></table>':"لا توجد منتجات مسجلة حتى الآن.";
+ adminProducts=p.data||[];renderProductsTable();
  $("movements").innerHTML=h.data.length?'<table><thead><tr><th>القطعة</th><th>المخزن</th><th>الحركة</th><th>الكمية</th><th>الرصيد بعدها</th></tr></thead><tbody>'+h.data.map(x=>'<tr><td>'+escapeHtml(x.part_name_ar)+'</td><td>'+escapeHtml(x.location_name)+'</td><td>'+({in:"إضافة",out:"صرف",adjustment:"تسوية"}[x.movement_type]||x.movement_type)+'</td><td>'+Number(x.quantity_delta)+'</td><td>'+Number(x.balance_after)+'</td></tr>').join("")+'</tbody></table>':"لا توجد حركات مخزون حتى الآن.";
  document.querySelectorAll(".editBtn").forEach(btn=>btn.onclick=()=>openExistingProductForReview(btn.dataset.id));
  document.querySelectorAll(".archiveBtn").forEach(btn=>btn.onclick=async()=>{if(!confirm("أرشفة القطعة؟ ستختفي من الكتالوج العام مع الاحتفاظ بسجلها."))return;try{await api("/api/admin/products/"+btn.dataset.id,{method:"DELETE",body:JSON.stringify({version:Number(btn.dataset.version)})});message("adminMsg","تمت أرشفة القطعة.");await loadAdmin()}catch(e){message("adminMsg",e.message)}});
@@ -614,12 +637,14 @@ async function handleAdmin(request, url, env) {
   if (!session) return json({ error: "Authentication required." }, 401);
   if (path === "/api/admin/me" && request.method === "GET") return json({ user: { email: session.email, role: session.role } });
   if (path === "/api/admin/products" && request.method === "GET") {
-    const rawLimit = Number(url.searchParams.get("limit") || 50);
-    const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 50;
+    const rawLimit = Number(url.searchParams.get("limit") || 100);
+    const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 100;
     const result = await env.DB.prepare(`
       SELECT p.id,p.part_name_ar,p.part_name_en,p.condition,p.part_code,p.sale_price_piasters,
-        p.purchase_price_piasters,p.is_public,p.version,p.created_at,p.updated_at,COALESCE(SUM(ib.quantity),0) AS total_quantity
-      FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
+        p.purchase_price_piasters,p.internal_notes,p.category_id,c.name_ar AS category_name_ar,
+        p.is_public,p.version,p.created_at,p.updated_at,COALESCE(SUM(ib.quantity),0) AS total_quantity
+      FROM products p LEFT JOIN categories c ON c.id=p.category_id
+      LEFT JOIN inventory_balances ib ON ib.product_id=p.id
       WHERE p.archived_at IS NULL GROUP BY p.id ORDER BY p.updated_at DESC,p.id ASC LIMIT ?
     `).bind(limit).all();
     return json({ data: result.results || [] });
