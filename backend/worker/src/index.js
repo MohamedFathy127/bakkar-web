@@ -99,7 +99,8 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <h3>استيراد وتصدير Excel</h3>
 <section class="panel">
 <p>استورد ملف برنامج المخزن بعد مراجعة الصفوف، أو صدّر نسخة Excel محدثة من بيانات الموقع.</p>
-<div class="action-row"><button id="exportExcelBtn" type="button" class="secondary">تصدير المخزون إلى Excel</button><span id="exportExcelMsg" class="muted"></span></div>
+<div class="action-row"><button id="exportExcelBtn" type="button" class="secondary">تصدير المخزون إلى Excel</button><button id="backupDataBtn" type="button" class="secondary">تنزيل نسخة احتياطية شاملة</button><span id="exportExcelMsg" class="muted"></span><span id="backupDataMsg" class="muted"></span></div>
+<p class="muted">النسخة الاحتياطية تشمل بيانات المنتجات والمخازن والأرصدة والحركات وسجل التدقيق وسجلات الاستيراد. لا تتضمن كلمات المرور أو جلسات الدخول.</p>
 <p>ارفع ملف XLSX لمعاينة الصفوف أولًا. لن يتغير المخزون إلا بعد اختيار قرار لكل صف والضغط على اعتماد.</p>
 <input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
 <button id="previewExcelBtn" type="button">رفع الملف ومعاينة الصفوف</button>
@@ -325,6 +326,20 @@ $("exportExcelBtn").onclick=async()=>{
   $("exportExcelMsg").textContent="تم تجهيز "+Number(rows.length-1).toLocaleString("ar-EG")+" صفًا.";
  }catch(e){$("exportExcelMsg").textContent=e.message||"تعذر تصدير الملف."}
  finally{$("exportExcelBtn").disabled=false}
+};
+$("backupDataBtn").onclick=async()=>{
+ try{
+  $("backupDataBtn").disabled=true;$("backupDataMsg").textContent="جارٍ تجهيز النسخة الاحتياطية...";
+  const backup=await api("/api/admin/backup-data");
+  if(backup.format!=="bakkar-inventory-backup"||!backup.checksum_sha256)throw Error("ملف النسخة الاحتياطية غير مكتمل.");
+  const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement("a");
+  link.href=url;link.download="Bakkar_Full_Backup_"+new Date().toISOString().replace(/[:.]/g,"-")+".json";
+  document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+  $("backupDataMsg").textContent="تم تجهيز النسخة. عدد السجلات: "+Object.values(backup.counts||{}).reduce((sum,value)=>sum+Number(value||0),0).toLocaleString("ar-EG")+".";
+ }catch(e){$("backupDataMsg").textContent=e.message||"تعذر إنشاء النسخة الاحتياطية."}
+ finally{$("backupDataBtn").disabled=false}
 };
 $("productForm").onsubmit=async e=>{e.preventDefault();try{
  const payload=buildProductPayload();
@@ -626,6 +641,40 @@ async function handleAdmin(request, url, env) {
       movements_30d: movements.results || [],
       recent_imports: imports.results || [],
     });
+  }
+  if (path === "/api/admin/backup-data" && request.method === "GET") {
+    const statements = [
+      env.DB.prepare("SELECT * FROM brands ORDER BY id"),
+      env.DB.prepare("SELECT * FROM categories ORDER BY id"),
+      env.DB.prepare("SELECT * FROM locations ORDER BY id"),
+      env.DB.prepare("SELECT * FROM products ORDER BY id"),
+      env.DB.prepare("SELECT * FROM product_fitments ORDER BY id"),
+      env.DB.prepare("SELECT * FROM inventory_balances ORDER BY product_id,location_id"),
+      env.DB.prepare("SELECT * FROM stock_movements ORDER BY created_at,id"),
+      env.DB.prepare("SELECT * FROM audit_log ORDER BY created_at,id"),
+      env.DB.prepare("SELECT * FROM import_batches ORDER BY created_at,id"),
+      env.DB.prepare("SELECT * FROM import_batch_rows ORDER BY batch_id,row_number"),
+    ];
+    const results = await env.DB.batch(statements);
+    const tableNames = [
+      "brands","categories","locations","products","product_fitments",
+      "inventory_balances","stock_movements","audit_log","import_batches","import_batch_rows",
+    ];
+    const data = Object.fromEntries(tableNames.map((name,index)=>[name,results[index]?.results||[]]));
+    const counts = Object.fromEntries(tableNames.map(name=>[name,data[name].length]));
+    const backup = {
+      format: "bakkar-inventory-backup",
+      format_version: 1,
+      schema_version: 8,
+      exported_at: new Date().toISOString(),
+      counts,
+      excluded_tables: ["admin_credentials","admin_sessions","login_attempts","login_ip_attempts","staff_accounts"],
+      data,
+    };
+    const bytes = new TextEncoder().encode(JSON.stringify(backup));
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256",bytes));
+    const checksum = [...digest].map(value=>value.toString(16).padStart(2,"0")).join("");
+    return json({ ...backup, checksum_sha256: checksum });
   }
   if (path === "/api/admin/export-data" && request.method === "GET") {
     const [count, result] = await Promise.all([
