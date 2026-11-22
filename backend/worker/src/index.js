@@ -322,7 +322,7 @@ $("exportExcelBtn").onclick=async()=>{
   XLSX.utils.book_append_sheet(workbook,worksheet,"المخزون");
   const date=new Date().toISOString().slice(0,10);
   XLSX.writeFile(workbook,"Bakkar_Inventory_"+date+".xlsx");
-  $("exportExcelMsg").textContent="تم تجهيز "+fmtNumber(rows.length-1)+" صفًا.";
+  $("exportExcelMsg").textContent="تم تجهيز "+Number(rows.length-1).toLocaleString("ar-EG")+" صفًا.";
  }catch(e){$("exportExcelMsg").textContent=e.message||"تعذر تصدير الملف."}
  finally{$("exportExcelBtn").disabled=false}
 };
