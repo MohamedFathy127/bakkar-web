@@ -49,6 +49,10 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 
 @media(max-width:640px){main{margin:12px auto;padding:10px}.panel{padding:16px}th,td{font-size:12px;padding:8px}}
 
+
+/* Keep the owner workspace focused on Excel import/export only. */
+#dashboard > :not(#excelOnlySection) { display: none !important; }
+#excelOnlySection #backupDataBtn, #excelOnlySection #backupDataMsg, #excelOnlySection .backup-help { display: none !important; }
 </style></head><body><main>
 <header><div><div class="brand">بكار لقطع غيار السيارات</div><h1>إدارة المخزون</h1><p>هذه لوحة خاصة بالإدارة فقط. الموقع العام لا يحتاج إلى تسجيل دخول.</p></div><button id="logout" class="secondary hidden">تسجيل الخروج</button></header>
 <section id="login" class="panel"><h2>تسجيل دخول المالك</h2>
@@ -74,7 +78,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
  <section class="panel"><h3>جودة البيانات</h3><div id="analyticsQuality" class="muted">جارٍ التحميل...</div></section>
 </div>
 <section class="panel"><h3>آخر عمليات استيراد Excel</h3><div id="analyticsImports" class="muted">جارٍ التحميل...</div></section>
-<h3>استيراد وتصدير Excel</h3>
+<div id="excelOnlySection"><h3>مزامنة المخزون عبر Excel</h3>
 <section class="panel">
 <p>استورد ملف برنامج المخزن بعد مراجعة الصفوف، أو صدّر نسخة Excel محدثة من بيانات الموقع.</p>
 <div class="action-row"><button id="exportExcelBtn" type="button" class="secondary">تصدير المخزون إلى Excel</button><button id="backupDataBtn" type="button" class="secondary">تنزيل نسخة احتياطية شاملة</button><span id="exportExcelMsg" class="muted"></span><span id="backupDataMsg" class="muted"></span></div>
@@ -87,7 +91,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <div id="excelImportSummary"></div>
 <div id="excelImportRows"></div>
 <button id="applyExcelBtn" type="button" class="hidden">اعتماد القرارات المحددة</button>
-</section><details class="panel manual-tools" open><summary>إدارة المنتجات والمخزون — أدوات الإدارة اليومية</summary><h3>إضافة قطعة أو تعديل بياناتها</h3>
+</section></div><details class="panel manual-tools" open><summary>إدارة المنتجات والمخزون — أدوات الإدارة اليومية</summary><h3>إضافة قطعة أو تعديل بياناتها</h3>
 <form id="productForm" class="panel">
 <label>اسم القطعة بالعربي *</label><input id="partName" required maxlength="160">
 <label>اسم القطعة بالإنجليزي</label><input id="partNameEn" maxlength="160">
