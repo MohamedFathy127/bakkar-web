@@ -126,7 +126,7 @@ body{background:#F6F5F3;color:#1F1D1B;font-family:Cairo,sans-serif}
    <select id="fBrand" class="inp" onchange="renderCatalog()"><option value="">كل الماركات</option></select>
    <select id="fCat" class="inp" onchange="renderCatalog()"><option value="">كل الأقسام</option></select>
    <select id="fCond" class="inp" onchange="renderCatalog()"><option value="">كل الحالات</option><option>جديدة</option><option>استيراد</option></select>
-   <select id="fSort" class="inp" onchange="renderCatalog()"><option value="">الترتيب</option><option value="p1">السعر: الأقل</option><option value="p2">السعر: الأعلى</option><option value="n">الاسم</option></select>
+   <select id="fSort" class="inp" onchange="renderCatalog()"><option value="">الترتيب</option><option value="n">الاسم</option></select>
    <span class="text-xs text-stone-500 font-semibold text-center">النتائج: <b id="cnt">0</b></span>
   </div>
   <div id="grid" class="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
@@ -220,7 +220,6 @@ let suggestionSequence=0,searchTimer=null;
 const $=id=>document.getElementById(id);
 const uniq=a=>[...new Set(a)];
 const norm=s=>(s||'').toString().toLowerCase();
-const price=p=>p.price!==null?p.price.toLocaleString('ar-EG')+' ج.م ':'<span class="text-sm text-stone-500">السعر عند التواصل</span>';
 const years=p=>formatYears(p);
 const waLink=t=>`https://wa.me/${PHONE}?text=${encodeURIComponent(t)}`;
 const prodMsg=p=>`السلام عليكم بكار، عايز أستفسر عن: ${p.ar} (${p.en})\nالسيارة: ${p.brand} ${p.car} ${years(p)}\nكود: ${p.code}\nممكن تأكدولي السعر والتوفر؟`;
@@ -333,7 +332,7 @@ function card(p){
    <div class="flex justify-between items-center text-[11px] font-bold"><span class="${brand.t}">${escapeHtml(p.brand)}</span><span class="bg-stone-100 rounded px-2 py-0.5">${escapeHtml(p.cond)}</span></div>
    <h3 class="font-black leading-snug">${escapeHtml(p.ar)}</h3><p class="text-xs text-stone-500" dir="ltr" style="text-align:right">${escapeHtml(p.en)}</p>
    <p class="text-xs text-stone-600">🚘 ${escapeHtml(fitmentText)}</p><p class="text-[11px] font-mono text-stone-400">${escapeHtml(p.code)}</p>
-  </button><div class="px-4 pb-4 flex items-center justify-between gap-2"><span class="font-black">${price(p)}</span>
+  </button><div class="px-4 pb-4 flex items-center justify-between gap-2"><span class="text-sm font-bold text-stone-600">السعر عند التواصل</span>
    <span class="text-xs text-stone-500">${availability}</span><a target="_blank" rel="noopener" href="${waLink(prodMsg(p))}" class="wa !px-3 !py-2 !text-xs">اسأل</a></div></article>`;
 }
 
@@ -381,7 +380,7 @@ function openModal(id){
   <p>التوافقات المؤكدة:</p><ul class="list-disc pr-5">${fitments||'<li>لا توجد تفاصيل توافق متاحة</li>'}</ul>
   <p>القسم: <b class="text-stone-800">${escapeHtml(p.cat||'غير محدد')}</b> • الحالة: <b class="text-stone-800">${escapeHtml(p.cond||'غير محددة')}</b></p>
   <p>التوفر: <b class="text-stone-800">${p.inStock?'متاح — اسأل عن الكمية':'اسأل عن التوفر'}</b></p></div>
-  <div class="flex items-center justify-between pt-1"><span class="text-xl font-black text-bk-red">${price(p)}</span>
+  <div class="flex items-center justify-between pt-1"><span class="text-sm font-bold text-stone-600">للاستفسار عن السعر تواصل معنا</span>
   <a target="_blank" rel="noopener" href="${waLink(prodMsg(p))}" class="wa">💬 اسأل عن القطعة</a></div>
   ${related.length?`<div class="pt-2 border-t border-bk-line"><p class="text-xs font-bold mb-2">منتجات ذات صلة</p><div class="space-y-1">${related.map(item=>`<button data-related-product="${escapeHtml(item.id)}" class="block w-full text-right text-xs bg-bk-bg rounded-lg px-3 py-2">${escapeHtml(item.ar)} — ${escapeHtml(item.brand)} ${escapeHtml(item.car)} ${escapeHtml(years(item))}</button>`).join('')}</div></div>`:''}`;
  $('mBody').querySelectorAll('[data-related-product]').forEach(button=>button.addEventListener('click',()=>openModal(button.dataset.relatedProduct)));
