@@ -114,7 +114,7 @@ function parseCandidate(row) {
 }
 const CANDIDATE_SQL = `
   SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-    p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version,
+    p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version, p.internal_notes, p.version,
     COALESCE((SELECT SUM(ib.quantity) FROM inventory_balances ib WHERE ib.product_id=p.id),0) AS total_quantity,
     COALESCE((
       SELECT json_group_array(json_object(
@@ -216,7 +216,7 @@ async function parseRows(db, rows) {
     db.prepare("SELECT id,name,active FROM locations").all(),
     db.prepare(`
       SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-        p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version,
+        p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version, p.internal_notes, p.version,
         COALESCE(SUM(ib.quantity),0) AS total_quantity,
         COALESCE((
           SELECT json_group_array(json_object(
@@ -391,7 +391,7 @@ async function handleExcelImport(request, url, env, session) {
         .bind(batch.id).all(),
       env.DB.prepare(`
         SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-          p.sale_price_piasters, p.purchase_price_piasters,
+          p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version,
           COALESCE(SUM(ib.quantity),0) AS total_quantity,
           COALESCE((
             SELECT json_group_array(json_object(
@@ -446,7 +446,7 @@ async function handleExcelImport(request, url, env, session) {
     const [productsResult] = await Promise.all([
       env.DB.prepare(`
         SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-          p.sale_price_piasters, p.purchase_price_piasters,
+          p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version,
           COALESCE(SUM(ib.quantity),0) AS total_quantity,
           COALESCE((
             SELECT json_group_array(json_object(
