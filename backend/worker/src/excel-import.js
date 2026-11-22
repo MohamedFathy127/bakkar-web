@@ -65,10 +65,18 @@ function numberValue(value) {
   let cleaned = value.normalize("NFKC")
     .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
     .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
-    .replace(/[٬,،]/g, "")
     .replace(/٫/g, ".")
     .replace(/(?:ج\s*\.\s*م|جنيه(?:ات)?|EGP|L\s*\.\s*E|LE)/gi, "")
     .replace(/\s+/g, "");
+  if (/[،,]/.test(cleaned)) {
+    if (/^\d{1,3}(?:[,،]\d{3})+(?:\.\d+)?$/.test(cleaned)) {
+      cleaned = cleaned.replace(/[,،]/g, "");
+    } else if (/^\d+[,،]\d{1,2}$/.test(cleaned)) {
+      cleaned = cleaned.replace(/[,،]/, ".");
+    } else {
+      return undefined;
+    }
+  }
   if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(cleaned)) return undefined;
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : undefined;
