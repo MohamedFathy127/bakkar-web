@@ -345,7 +345,7 @@ $("productSearch").addEventListener("input",renderProductsTable);
 $("productVisibility").addEventListener("change",renderProductsTable);
 async function bulkVisibility(isPublic){
  const raw=$("bulkVisibilityExclusions").value.trim();
- const exclusions=raw?raw.split(/[،,\\n]+/).map(v=>v.trim().toLocaleLowerCase("ar")).filter(Boolean):[];
+ const exclusions=raw?raw.split(/[،,\n]+/).map(v=>v.trim().toLocaleLowerCase("ar")).filter(Boolean):[];
  const excludedIds=adminProducts.filter(p=>exclusions.some(term=>
   String(p.part_name_ar||"").toLocaleLowerCase("ar").includes(term)||
   String(p.part_code||"").toLocaleLowerCase("ar").includes(term)
