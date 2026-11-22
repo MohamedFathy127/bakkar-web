@@ -30,7 +30,8 @@ function textValue(value) {
 function numberValue(value) {
   if (value === null || value === undefined || String(value).trim() === "") return null;
   const normalized = String(value).replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
-  const parsed = Number(normalized.replace(/[,،]/g, "").replace(/جنيه|ج\\.?م|EGP|LE/gi, "").trim());
+  const cleaned = normalized.replace(/[,،]/g, "").replace(/جنيه|ج\\.?م|EGP|LE/gi, "").replace(/[^0-9.+-]/g, "");
+  const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 function moneyPiasters(value) {
