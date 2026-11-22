@@ -191,9 +191,9 @@ function importMessage(value){$("excelImportMsg").textContent=value;$("excelImpo
 let renderedImportBatchId=null;
 function normalizeMatchText(value){
  return String(value??"").normalize("NFKC").toLowerCase()
-  .replace(/[\u064B-\u065F\u0670]/g,"")
+  .replace(/[\\u064B-\\u065F\\u0670]/g,"")
   .replace(/[أإآ]/g,"ا").replace(/ى/g,"ي")
-  .replace(/[\s\u200f\u200e]+/g," ").trim();
+  .replace(/[\\s\\u200f\\u200e]+/g," ").trim();
 }
 function renderImportRows(rows,batch){
  const sameBatch=Boolean(batch?.id&&batch.id===renderedImportBatchId);
@@ -307,7 +307,7 @@ $("applyExcelBtn").onclick=async()=>{
    if(!select.value)throw Error("راجع الصف واختر قرارًا له. الصف "+r.row_number);
    decisions[String(r.row_number)]=select.value;
   }
-  if(!confirm("هل راجعت كل الصفوف وتريد تنفيذ القرارات؟\n\nعند مطابقة قطعة موجودة: سيتم تحديث الحقول غير الفارغة من ملف Excel (الاسم والحالة والكود والأسعار والملاحظات)، مع الاحتفاظ بالقيم القديمة في الخانات الفارغة. الصفر قيمة فعلية.\n\nالكمية في الملف ستصبح الرصيد المستهدف للمخزن المحدد، وليست كمية تضاف فوق الرصيد الحالي. توافقات السيارات الجديدة ستظل بحاجة إلى تأكيد."))return;
+  if(!confirm("هل راجعت كل الصفوف وتريد تنفيذ القرارات؟\\n\\nعند مطابقة قطعة موجودة: سيتم تحديث الحقول غير الفارغة من ملف Excel (الاسم والحالة والكود والأسعار والملاحظات)، مع الاحتفاظ بالقيم القديمة في الخانات الفارغة. الصفر قيمة فعلية.\\n\\nالكمية في الملف ستصبح الرصيد المستهدف للمخزن المحدد، وليست كمية تضاف فوق الرصيد الحالي. توافقات السيارات الجديدة ستظل بحاجة إلى تأكيد."))return;
   $("applyExcelBtn").disabled=true;
   const result=await api("/api/admin/imports/"+encodeURIComponent(currentImportBatchId)+"/apply",{method:"POST",body:JSON.stringify({decisions})});
   const locations=(result.report?.by_location||[]).map(x=>x.location_name+": "+x.product_count+" أصناف / "+x.total_quantity+" قطعة").join("؛ ")||"لا توجد أرصدة مسجلة";
