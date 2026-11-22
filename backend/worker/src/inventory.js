@@ -118,6 +118,28 @@ function validateProduct(input) {
   };
 }
 
+async function referencesValid(db, product) {
+  if (product.categoryId) {
+    const category = await db.prepare("SELECT id FROM categories WHERE id=? AND active=1 LIMIT 1")
+      .bind(product.categoryId).first();
+    if (!category) return false;
+  }
+  const brandIds = [...new Set(product.fitments.map(f => f.brandId))];
+  if (brandIds.length) {
+    const placeholders = brandIds.map(() => "?").join(",");
+    const result = await db.prepare(`SELECT id FROM brands WHERE id IN (${placeholders})`)
+      .bind(...brandIds).all();
+    if ((result.results || []).length !== brandIds.length) return false;
+  }
+  const seen = new Set();
+  for (const f of product.fitments) {
+    const key = [f.brandId, f.model, f.yearFrom ?? "", f.yearTo ?? ""].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+  }
+  return true;
+}
+
 function productSnapshot(p) {
   return JSON.stringify({
     part_name_ar: p.partName, part_name_en: p.partNameEn, condition: p.condition,
@@ -182,6 +204,7 @@ async function handleInventoryAdmin(request, url, env, session) {
     if (parsed.error) return reply({ error: parsed.error }, 400);
     const product = validateProduct(parsed.value);
     if (!product) return reply({ error: "راجع بيانات القطعة والتوافق والأسعار." }, 400);
+    if (!await referencesValid(env.DB, product)) return reply({ error: "الماركة أو التصنيف غير موجود، أو يوجد توافق مكرر." }, 400);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const statements = [
@@ -214,6 +237,7 @@ async function handleInventoryAdmin(request, url, env, session) {
     if (!Number.isInteger(expectedVersion) || expectedVersion < 1 || !product) {
       return reply({ error: "راجع البيانات ورقم إصدار القطعة." }, 400);
     }
+    if (!await referencesValid(env.DB, product)) return reply({ error: "الماركة أو التصنيف غير موجود، أو يوجد توافق مكرر." }, 400);
     const now = new Date().toISOString();
     const statements = [
       env.DB.prepare(`
@@ -285,6 +309,23 @@ async function handleInventoryAdmin(request, url, env, session) {
       return reply({ error: "اسم المخزن مستخدم بالفعل أو البيانات غير صالحة." }, 409);
     }
     return reply({ ok: true, id }, 201);
+  }
+
+  if (path === "/api/admin/stock-movements" && method === "GET") {
+    const productId = url.searchParams.get("product_id");
+    const rawLimit = Number(url.searchParams.get("limit") || 50);
+    const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 50;
+    const rows = await env.DB.prepare(`
+      SELECT sm.id, sm.product_id, p.part_name_ar, sm.location_id, l.name AS location_name,
+        sm.movement_type, sm.quantity_delta, sm.balance_after, sm.reason, sm.reference,
+        sm.actor_email, sm.created_at
+      FROM stock_movements sm
+      JOIN products p ON p.id=sm.product_id
+      JOIN locations l ON l.id=sm.location_id
+      WHERE (? IS NULL OR sm.product_id=?)
+      ORDER BY sm.created_at DESC, sm.id DESC LIMIT ?
+    `).bind(productId, productId, limit).all();
+    return reply({ data: rows.results || [] });
   }
 
   if (path === "/api/admin/stock-movements" && method === "POST") {
