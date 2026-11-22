@@ -128,6 +128,7 @@ async function handlePublicCatalog(url, env) {
         AND (? = '' OR COALESCE(pc.condition,'') = ?)
         AND (? = '' OR pc.vehicle_model = ?)
         AND (? IS NULL OR (COALESCE(pc.year_from,1900) <= ? AND COALESCE(pc.year_to,2100) >= ?))
+        AND pc.sale_price_piasters IS NOT NULL
       GROUP BY pc.product_id
     ), catalog AS (
       SELECT pc.product_id,
@@ -200,21 +201,21 @@ async function handlePublicCatalogMeta(env) {
     env.DB.prepare(`
       SELECT vehicle_brand_en AS name_en, vehicle_brand_ar AS name_ar,
         COUNT(DISTINCT product_id) AS product_count
-      FROM public_catalog GROUP BY vehicle_brand_en, vehicle_brand_ar ORDER BY vehicle_brand_en
+      FROM public_catalog WHERE sale_price_piasters IS NOT NULL GROUP BY vehicle_brand_en, vehicle_brand_ar ORDER BY vehicle_brand_en
     `).all(),
     env.DB.prepare(`
       SELECT DISTINCT category_name_ar AS name
-      FROM public_catalog WHERE category_name_ar IS NOT NULL AND trim(category_name_ar) <> ''
+      FROM public_catalog WHERE sale_price_piasters IS NOT NULL AND category_name_ar IS NOT NULL AND trim(category_name_ar) <> ''
       ORDER BY name
     `).all(),
     env.DB.prepare(`
       SELECT DISTINCT condition AS name
-      FROM public_catalog WHERE condition IS NOT NULL AND trim(condition) <> ''
+      FROM public_catalog WHERE sale_price_piasters IS NOT NULL AND condition IS NOT NULL AND trim(condition) <> ''
       ORDER BY name
     `).all(),
     env.DB.prepare(`
       SELECT DISTINCT vehicle_brand_en AS brand, vehicle_model AS model
-      FROM public_catalog ORDER BY brand, model
+      FROM public_catalog WHERE sale_price_piasters IS NOT NULL ORDER BY brand, model
     `).all(),
   ]);
   return json({

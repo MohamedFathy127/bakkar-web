@@ -111,7 +111,7 @@ function validateProduct(input) {
       aliases === null || notes === null || (input.category_id && !categoryId) ||
       sale === undefined || purchase === undefined || fitments === null) return null;
   const isPublic = input.is_public === true || input.is_public === 1;
-  if (isPublic && (!fitments.length || fitments.some(f => f.status !== "confirmed"))) return null;
+  if (isPublic && (sale === null || !fitments.length || fitments.some(f => f.status !== "confirmed"))) return null;
   return {
     partName, partNameEn: partNameEn || null, condition: condition || null,
     partCode: partCode || null, aliases: aliases || null, notes: notes || null,

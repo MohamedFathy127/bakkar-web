@@ -59,6 +59,7 @@ test("public catalog filters through the public projection, pages, and returns o
   assert.equal("internal_notes" in body.data[0], false);
   assert.equal("quantity" in body.data[0], false);
   assert.match(db.calls[0].sql, /FROM public_catalog/);
+  assert.match(db.calls[0].sql, /sale_price_piasters IS NOT NULL/);
   assert.doesNotMatch(db.calls[0].sql, /SELECT\s+(?:p\.\*|purchase_price_piasters|internal_notes)/i);
   assert.ok(db.calls[0].values.includes("%R-1%"));
 });
@@ -135,6 +136,7 @@ test("catalog metadata exposes published brand, category, condition, and model o
   assert.deepEqual(body.models, [{ brand: "Kia", model: "Sportage" }]);
   assert.equal(JSON.stringify(body).includes("private"), false);
   assert.equal(JSON.stringify(body).includes("purchase_price"), false);
+  assert.ok(db.calls.every(call => /sale_price_piasters IS NOT NULL/.test(call.sql)));
 });
 
 test("client mapping keeps zero prices, hides unknown/private fields, and matches any confirmed fitment", () => {
