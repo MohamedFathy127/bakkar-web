@@ -179,6 +179,7 @@ function renderImportRows(rows,batch){
   const item=r.item||{},issues=r.issues||[],candidates=r.candidates||[];
   const exactDuplicate=issues.some(x=>x.startsWith("يوجد صف مطابق تمامًا"));
   const invalid=!item.part_name_ar||item.part_name_ar.length>160||(item.year_from!==null&&item.year_to!==null&&item.year_to<item.year_from);
+  const needsReview=issues.length>0||candidates.length>0||invalid;
   const locked=exactDuplicate||invalid||r.status!=="preview";
   const choices=locked?'<option value="skip">تخطي هذا الصف</option>':
    '<option value="">اختر قرارًا لهذا الصف</option><option value="create">إنشاء قطعة جديدة</option>'+
@@ -191,7 +192,8 @@ function renderImportRows(rows,batch){
    '<p>الكمية: '+escapeHtml(item.quantity??"—")+' | المخزن: '+escapeHtml(item.location_raw||"غير محدد")+' | الكود: '+escapeHtml(item.part_code||"—")+'</p>'+
    '<p>البيع: '+escapeHtml(item.sale_price_piasters==null?"غير محدد":(Number(item.sale_price_piasters)/100).toFixed(2)+" ج.م")+' | الشراء: '+escapeHtml(item.purchase_price_piasters==null?"غير محدد":(Number(item.purchase_price_piasters)/100).toFixed(2)+" ج.م")+' | الحالة: '+escapeHtml(item.condition||"—")+'</p>'+
    '<p>مراجعة: '+escapeHtml(warning)+' | الحالة: '+escapeHtml(state)+'</p>'+
-   (r.status==="preview"?'<label>قرار الصف</label><select class="excel-decision" data-row="'+Number(r.row_number)+'">'+choices+'</select>':'')+'</div>';
+   (r.status==="preview"&&needsReview?'<label>مطلوب مراجعة — اختر القرار</label><select class="excel-decision" data-row="'+Number(r.row_number)+'">'+choices+'</select>':
+    r.status==="preview"?'<p class="success">سليم — سيتم إدراجه تلقائيًا عند الاعتماد</p>':'')+'</div>';
  }).join("");
  $("applyExcelBtn").classList.toggle("hidden",!currentImportBatchId||!currentImportRows.some(r=>r.status==="preview"));
 }
@@ -228,7 +230,8 @@ $("applyExcelBtn").onclick=async()=>{
   const decisions={};
   for(const r of currentImportRows.filter(x=>x.status==="preview")){
    const select=document.querySelector('.excel-decision[data-row="'+Number(r.row_number)+'"]');
-   if(!select||!select.value)throw Error("اختر قرارًا لكل صف قبل الاعتماد. الصف "+r.row_number);
+   if(!select)continue;
+   if(!select.value)throw Error("راجع الصف واختر قرارًا له. الصف "+r.row_number);
    decisions[String(r.row_number)]=select.value;
   }
   if(!confirm("هل راجعت كل الصفوف وتريد تنفيذ القرارات؟ سيتم تحديث أرصدة المخازن حسب الكميات المحددة في الملف."))return;
