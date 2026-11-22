@@ -42,6 +42,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 .bar-row{margin:13px 0}.bar-meta{display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:7px}.bar-track{height:9px;background:#eee8e1;border-radius:99px;overflow:hidden}.bar-fill{height:100%;background:#8c2727;border-radius:99px}
 .section-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .action-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.action-row button{margin-top:8px}
+.manual-tools{margin-top:18px}.manual-tools summary{cursor:pointer;font-weight:700;color:#8c2727;padding:4px}
 .excel-edit{border-top:1px solid #e9e1d7;margin-top:14px;padding-top:12px}
 .excel-edit textarea{width:100%;padding:12px;border:1px solid #d7d1c8;border-radius:9px;font:inherit}
 
@@ -60,7 +61,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <button id="setupBtn">إنشاء حساب المالك</button><div id="setupMsg" class="notice hidden"></div></section>
 <section id="dashboard" class="panel hidden">
 <h2>مرحبًا <span id="who"></span></h2>
-<p>إدارة المنتجات والأرصدة وحركة المخزون. أي تعديل هنا يُحفظ في قاعدة البيانات.</p>
+<p>لوحة بكار الخاصة بمزامنة بيانات برنامج المخزن، مراجعة الاستيراد، متابعة أداء الموقع وإدارة النسخ الاحتياطية.</p>
 <div id="adminMsg" class="notice hidden"></div>
 <div id="duplicateReview" class="panel hidden"></div>
 <div class="section-head"><h3>نظرة عامة على المخزون</h3><span class="muted">مؤشرات مباشرة من قاعدة بيانات الموقع</span></div>
@@ -72,7 +73,20 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
  <section class="panel"><h3>جودة البيانات</h3><div id="analyticsQuality" class="muted">جارٍ التحميل...</div></section>
 </div>
 <section class="panel"><h3>آخر عمليات استيراد Excel</h3><div id="analyticsImports" class="muted">جارٍ التحميل...</div></section>
-<h3>إضافة قطعة</h3>
+<h3>استيراد وتصدير Excel</h3>
+<section class="panel">
+<p>استورد ملف برنامج المخزن بعد مراجعة الصفوف، أو صدّر نسخة Excel محدثة من بيانات الموقع.</p>
+<div class="action-row"><button id="exportExcelBtn" type="button" class="secondary">تصدير المخزون إلى Excel</button><button id="backupDataBtn" type="button" class="secondary">تنزيل نسخة احتياطية شاملة</button><span id="exportExcelMsg" class="muted"></span><span id="backupDataMsg" class="muted"></span></div>
+<p class="muted">النسخة الاحتياطية تشمل بيانات المنتجات والمخازن والأرصدة والحركات وسجل التدقيق وسجلات الاستيراد. لا تتضمن كلمات المرور أو جلسات الدخول.</p>
+<p>ارفع ملف XLSX لمعاينة الصفوف أولًا. لن يتغير المخزون إلا بعد اختيار قرار لكل صف والضغط على اعتماد.</p>
+<input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+<button id="previewExcelBtn" type="button">رفع الملف ومعاينة الصفوف</button>
+<button id="resumeExcelBtn" type="button" class="secondary">فتح معاينة سابقة</button>
+<div id="excelImportMsg" class="notice hidden"></div>
+<div id="excelImportSummary"></div>
+<div id="excelImportRows"></div>
+<button id="applyExcelBtn" type="button" class="hidden">اعتماد القرارات المحددة</button>
+</section><details class="panel manual-tools"><summary>أدوات يدوية إضافية (ليست جزءًا من المزامنة اليومية)</summary><h3>إضافة قطعة</h3>
 <form id="productForm" class="panel">
 <label>اسم القطعة بالعربي *</label><input id="partName" required maxlength="160">
 <label>اسم القطعة بالإنجليزي</label><input id="partNameEn" maxlength="160">
@@ -99,20 +113,6 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <button type="submit">إضافة مكان تخزين</button>
 <div id="locations" class="muted"></div>
 </form>
-<h3>استيراد وتصدير Excel</h3>
-<section class="panel">
-<p>استورد ملف برنامج المخزن بعد مراجعة الصفوف، أو صدّر نسخة Excel محدثة من بيانات الموقع.</p>
-<div class="action-row"><button id="exportExcelBtn" type="button" class="secondary">تصدير المخزون إلى Excel</button><button id="backupDataBtn" type="button" class="secondary">تنزيل نسخة احتياطية شاملة</button><span id="exportExcelMsg" class="muted"></span><span id="backupDataMsg" class="muted"></span></div>
-<p class="muted">النسخة الاحتياطية تشمل بيانات المنتجات والمخازن والأرصدة والحركات وسجل التدقيق وسجلات الاستيراد. لا تتضمن كلمات المرور أو جلسات الدخول.</p>
-<p>ارفع ملف XLSX لمعاينة الصفوف أولًا. لن يتغير المخزون إلا بعد اختيار قرار لكل صف والضغط على اعتماد.</p>
-<input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-<button id="previewExcelBtn" type="button">رفع الملف ومعاينة الصفوف</button>
-<button id="resumeExcelBtn" type="button" class="secondary">فتح معاينة سابقة</button>
-<div id="excelImportMsg" class="notice hidden"></div>
-<div id="excelImportSummary"></div>
-<div id="excelImportRows"></div>
-<button id="applyExcelBtn" type="button" class="hidden">اعتماد القرارات المحددة</button>
-</section>
 <h3>تسجيل حركة مخزون</h3>
 <form id="movementForm" class="panel">
 <label>القطعة</label><select id="movementProduct" required><option value="">اختر القطعة</option></select>
@@ -126,7 +126,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 </form>
 <h3>المنتجات المسجلة</h3><div id="products">جارٍ التحميل...</div>
 <h3>آخر حركات المخزون</h3><div id="movements">جارٍ التحميل...</div>
-</section>
+</details></section>
 <script>
 const $=id=>document.getElementById(id);
 let editingProductId=null,editingVersion=null,editingFitments=[],editingCategoryId=null,editingAliases="",editingNotes="";
