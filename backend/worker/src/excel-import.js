@@ -277,7 +277,10 @@ async function handleExcelImport(request, url, env, session) {
     if (!rows.length) return reply({ error: "لم يتم العثور على صفوف بيانات." }, 400);
     // Hash worksheet data rather than workbook metadata, so identical inventory
     // rows cannot be staged twice under a different filename or formatting.
-    const hash = await sha256Hex(new TextEncoder().encode(JSON.stringify(sheetRows)));
+    const canonicalRows = sheetRows.map(row => row.map(cell =>
+      typeof cell === "string" ? cell.normalize("NFKC").trim() : cell
+    ));
+    const hash = await sha256Hex(new TextEncoder().encode(JSON.stringify(canonicalRows)));
     const batchId = crypto.randomUUID();
     const now = new Date().toISOString();
     try {
@@ -371,6 +374,33 @@ async function handleExcelImport(request, url, env, session) {
         return reply({ error: "هذا الصف غير صالح أو مكرر داخل الملف؛ المتاح له هو التخطي فقط.", row_number: row.row_number }, 400);
       }
       rowChoices.set(row.row_number, choice);
+    }
+    // A single existing product/location may only receive one target quantity
+    // from a batch. Otherwise later rows could silently overwrite earlier stock.
+    const matchedTargets = new Map();
+    for (const row of rows) {
+      const choice = rowChoices.get(row.row_number);
+      if (!choice?.startsWith("match:")) continue;
+      const item = JSON.parse(row.normalized_json);
+      if (!item.location_id || item.quantity === null) continue;
+      const key = choice.slice(6) + ":" + item.location_id;
+      if (matchedTargets.has(key)) {
+        return reply({
+          error: "أكثر من صف يستهدف نفس القطعة الموجودة في نفس المخزن. لا يمكن جمع كمياتها تلقائيًا؛ اختر إنشاء سجلات مستقلة عند التأكد أو تخطَّ الصف المتكرر.",
+          row_numbers: [matchedTargets.get(key), row.row_number],
+        }, 409);
+      }
+      matchedTargets.set(key, row.row_number);
+    }
+    const lockToken = crypto.randomUUID();
+    const lockExpiry = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+    const lock = await env.DB.prepare(`
+      UPDATE import_batches SET apply_token=?, apply_lock_expires_at=?
+      WHERE id=? AND status='preview'
+        AND (apply_token IS NULL OR apply_lock_expires_at IS NULL OR apply_lock_expires_at < ?)
+    `).bind(lockToken, lockExpiry, batchId, new Date().toISOString()).run();
+    if (!lock.meta?.changes) {
+      return reply({ error: "دفعة الاستيراد قيد التنفيذ بالفعل. انتظر قليلًا ثم أعد فتح المعاينة." }, 409);
     }
     let created = 0, matched = 0, skipped = 0, failed = 0;
     for (const row of rows) {
@@ -478,10 +508,10 @@ async function handleExcelImport(request, url, env, session) {
         created_count=(SELECT COUNT(*) FROM import_batch_rows WHERE batch_id=? AND applied_action='created'),
         updated_count=(SELECT COUNT(*) FROM import_batch_rows WHERE batch_id=? AND applied_action='matched'),
         skipped_count=(SELECT COUNT(*) FROM import_batch_rows WHERE batch_id=? AND status='skipped'),
-        error_count=?, applied_at=?
-      WHERE id=?
+        error_count=?, applied_at=?, apply_token=NULL, apply_lock_expires_at=NULL
+      WHERE id=? AND apply_token=?
     `).bind(complete ? "applied" : "preview", batchId, batchId, batchId, failed,
-      complete ? new Date().toISOString() : null, batchId).run();
+      complete ? new Date().toISOString() : null, batchId, lockToken).run();
     return reply({
       ok: true, created, matched, skipped, failed,
       pending: Number(pending?.count || 0), complete,
