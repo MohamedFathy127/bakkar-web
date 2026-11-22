@@ -138,10 +138,10 @@ async function handleCatalog(url, env) {
       )) AS fitments
     FROM public_catalog pc
     WHERE
-      (? = '' OR pc.part_name_ar LIKE ? ESCAPE '\\\\'
-        OR COALESCE(pc.part_code, '') LIKE ? ESCAPE '\\\\'
-        OR pc.vehicle_model LIKE ? ESCAPE '\\\\'
-        OR pc.vehicle_brand_ar LIKE ? ESCAPE '\\\\')
+      (? = '' OR pc.part_name_ar LIKE ? ESCAPE '\\'
+        OR COALESCE(pc.part_code, '') LIKE ? ESCAPE '\\'
+        OR pc.vehicle_model LIKE ? ESCAPE '\\'
+        OR pc.vehicle_brand_ar LIKE ? ESCAPE '\\')
       AND (? IS NULL OR pc.product_id > ?)
     GROUP BY pc.product_id
     ORDER BY pc.product_id ASC
