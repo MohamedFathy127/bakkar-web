@@ -142,9 +142,18 @@ async function parseRows(db, rows) {
     if (item.sale_price_piasters === null) issues.push("سعر البيع غير مسجل؛ سيظل فارغًا وليس صفرًا.");
     if (item.purchase_price_piasters === null) issues.push("سعر الشراء غير مسجل؛ سيظل فارغًا وليس صفرًا.");
     const candidates = await findCandidates(db, item, cachedProducts);
-    const rowFingerprint = normalize(item.part_code || item.part_name_ar) + "|" + normalize(item.location_raw);
-    if (rowFingerprint !== "|" && seenRows.has(rowFingerprint)) issues.push("يوجد صف آخر لنفس القطعة وفي نفس المخزن داخل الملف؛ راجع الصفين لتجنب استبدال الرصيد.");
-    if (rowFingerprint !== "|") seenRows.add(rowFingerprint);
+    // Only flag a true duplicate identity in the same location. A reused part
+    // code or name alone is not enough: different models/years/conditions may
+    // represent distinct stock records.
+    const rowFingerprint = JSON.stringify([
+      normalize(item.brand_raw), normalize(item.part_name_ar), normalize(item.model_raw),
+      item.year_from ?? null, item.year_to ?? null, normalize(item.condition),
+      normalize(item.part_code), normalize(item.location_raw),
+    ]);
+    if (rowFingerprint !== '["","","",null,null,"","",""]' && seenRows.has(rowFingerprint)) {
+      issues.push("يوجد صف مطابق تمامًا لنفس القطعة والتوافق والحالة والكود وفي نفس المخزن؛ راجع الصفين قبل الاستيراد.");
+    }
+    if (rowFingerprint !== '["","","",null,null,"","",""]') seenRows.add(rowFingerprint);
     if (candidates.length) issues.push("احتمال تكرار: راجع السجلات الموجودة واختر المطابقة أو إنشاء سجل مستقل.");
     output.push({ row_number: index + 1, raw, item, issues, candidates });
   }
