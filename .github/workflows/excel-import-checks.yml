@@ -6,10 +6,12 @@ on:
       - main
       - feature/excel-import
       - feature/inventory-management
+      - integration/safe-inventory-release
   pull_request:
     branches:
       - main
       - feature/inventory-management
+      - integration/safe-inventory-release
 
 jobs:
   worker-validation:
@@ -25,12 +27,16 @@ jobs:
         with:
           node-version: 22
       - name: Install Worker dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Check JavaScript syntax
         run: |
           node --check src/index.js
           node --check src/inventory.js
           node --check src/excel-import.js
+          node --check src/catalog.js
+          node --check ../../catalog-client.mjs
+      - name: Apply all migrations to a fresh local D1
+        run: npm exec -- wrangler d1 migrations apply bakkar-inventory-test --local --config wrangler.test.jsonc --persist-to .wrangler/ci-migrations --force
       - name: Run import edge-case tests
         shell: bash
         run: |
@@ -42,4 +48,4 @@ jobs:
             echo "::notice::No edge-case test files exist on this ref; skipping this optional step."
           fi
       - name: Bundle against isolated test Worker config
-        run: npx wrangler deploy --dry-run --config wrangler.test.jsonc
+        run: npm exec -- wrangler deploy --dry-run --config wrangler.test.jsonc

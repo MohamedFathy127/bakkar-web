@@ -1,137 +1,78 @@
-# Bakkar Inventory API
+# Bakkar Inventory Worker
 
-A separate Cloudflare Worker API for the Bakkar inventory system.
+Cloudflare Worker API and owner dashboard for Bakkar Web.
+
+## Current release-candidate status
+
+- The integration branch is based on current `origin/main`, preserves both feature-branch histories, restores the reliability work reverted by PR #9, integrates PR #13, and carries the Admin HTML escaping fix verified from the deployed dashboard response.
+- No Pages or Worker deployment and no remote D1 migration was performed for this integration.
+- As of the 22 November 2026 review, the production and test Workers used the same deployed code. Read-only requests to both `/admin` routes returned the same HTML, and its evaluated SHA-256 matched the integration source after preserving the nested JavaScript escapes.
+- The production D1 was reported to contain three brands and no products or stock movements. PR #13's description reported test D1 counts of 51 products, 56 movements, one import batch, and 48 import rows; those remote counts were not queried in this turn.
+- GitHub PR #13 remains a feature-branch PR and is not the release-candidate PR. A successful Pages preview does not validate Worker runtime behavior.
 
 ## Architecture
 
-- Cloudflare Pages continues to serve the existing public website. Visitors do not need accounts or login.
-- This Worker is the API boundary; browser clients never connect directly to D1.
-- Cloudflare D1 is the source of truth for products, stock and audit history.
-- The public catalog reads only approved public fields. It never returns purchase prices, internal notes, exact stock balances or staff records.
-- The private administration interface is served at `/admin` on this Worker hostname. Only the owner signs in there; the public Pages website remains unchanged.
-- Admin sessions use random opaque tokens stored as SHA-256 hashes in D1 and an HttpOnly, Secure, SameSite=Strict cookie scoped to `/api/admin`. Passwords are salted and derived with PBKDF2-HMAC-SHA256 using 100,000 iterations (the tested Workers runtime limit). Cloudflare Access is not required.
+- Pages serves the public site at `https://bakkar-web.pages.dev`.
+- The public site calls `https://bakkar-inventory-api.mohamedfathy12127.workers.dev` as configured in the `bakkar-api-base` meta tag.
+- This Worker exposes a public catalog projection and serves owner admin UI at `/admin` on its own origin. The browser never connects to D1 directly.
+- D1 is the source of truth for products, confirmed fitments, balances, append-only movements, audit history, and staged import batches.
+- Production and test resource bindings are deliberately separate in `wrangler.jsonc` and `wrangler.test.jsonc`.
 
-## Deployment status
+## Public routes
 
-Production Worker (do not change without separate approval):
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/api/health` | API-to-D1 health check |
+| GET | `/api/catalog/meta` | Published brand, category, condition, and model filter options |
+| GET | `/api/catalog` | Published products with search, compatibility filters, sale price, boolean availability, sorting, and cursor pagination |
+| GET | `/admin` | Owner login and dashboard shell; data requires a session |
 
-- `https://bakkar-inventory-api.mohamedfathy12127.workers.dev`
+Public catalog responses come from `public_catalog`, include confirmed fitments only, and explicitly allowlist fields. They never return purchase price, notes, exact quantities, location balances, private records, staff data, import rows, or audit history. Availability is a boolean only.
 
-Isolated test Worker (hardened build):
+## Owner routes
 
-- `https://bakkar-inventory-test-api.mohamedfathy12127.workers.dev`
-- Health: `/api/health`
-- Public catalog: `/api/catalog`
-- Private admin: `/admin`
+Owner APIs cover setup/login/logout/session, product create/read/update/archive, brand/category/location references, stock movements and balances, analytics, Excel export, checksummed application-data backup, and Excel preview/edit/apply. Every data route requires an active owner session. Mutations require same-origin JSON requests and server-side validation.
 
-The code in this branch is not automatically proof of what is currently deployed. Do not deploy it until the migration and secrets are configured and the owner approves deployment.
+Login uses PBKDF2-HMAC-SHA256 password hashes, opaque hashed session tokens, an eight-hour session, account/IP and IP-wide throttles, and a Secure HttpOnly SameSite=Strict cookie. The exact login feedback and nested Admin HTML escaping fixes are covered by tests.
 
-## Current routes
+## Inventory and Excel guarantees
 
-| Method | Route | Access | Purpose |
-| --- | --- | --- | --- |
-| GET | `/api/health` | Public | Checks API-to-D1 connectivity |
-| GET | `/api/catalog` | Public | Approved public catalog with bounded results and cursor pagination |
-| GET | `/admin` | Public page; data requires sign-in | Standalone owner login and admin dashboard |
-| GET | `/api/admin/status` | Public, setup state only | Indicates whether initial owner setup is needed |
-| POST | `/api/admin/setup` | Same-origin + bootstrap secret | Creates the first owner once |
-| POST | `/api/admin/login` | Same-origin | Authenticates the owner and creates a session |
-| POST | `/api/admin/logout` | Authenticated browser session + same-origin | Revokes the current session |
-| GET | `/api/admin/me` | Owner session | Returns the signed-in identity |
-| GET | `/api/admin/products` | Owner session | Lists internal products and total stock |
-| GET | `/api/admin/products/:id` | Owner session | Reads one product, vehicle fitments and per-location balances |
-| POST | `/api/admin/products` | Owner session + same-origin | Creates a product and its fitments |
-| PUT | `/api/admin/products/:id` | Owner session + same-origin | Updates a product using optimistic version checks |
-| DELETE | `/api/admin/products/:id` | Owner session + same-origin | Archives a product; it does not hard-delete history |
-| GET | `/api/admin/meta` | Owner session | Lists brands, categories and storage locations |
-| POST | `/api/admin/locations` | Owner session + same-origin | Creates a storage location |
-| GET | `/api/admin/stock-movements` | Owner session | Reads stock movement history |
-| GET | `/api/admin/analytics` | Owner session | Aggregated inventory, data-quality, location, brand and movement metrics |
-| GET | `/api/admin/export-data` | Owner session | Exports active product fields, fitments and per-location balances for Excel generation |
-| GET | `/api/admin/backup-data` | Owner session | Downloads a checksummed application-data backup; excludes authentication secrets and sessions |
-| POST | `/api/admin/imports/preview` | Owner session + same-origin | Uploads and stages an XLSX preview; no inventory writes |
-| GET | `/api/admin/imports/:id` | Owner session | Reads a staged import batch and its row decisions |
-| PUT | `/api/admin/imports/:id/rows/:row` | Owner session + same-origin | Edits a staged row and reruns validation/candidate detection |
-| POST | `/api/admin/imports/:id/apply` | Owner session + same-origin | Applies explicit per-row create/match/skip decisions |
-| POST | `/api/admin/stock-movements` | Owner session + same-origin | Records an inbound, outbound or adjustment movement |
+- Stock is stored per product and location. Movement triggers update balances and reject negative stock; movement history is append-only.
+- Product deletion is archival so stock and audit history remain connected.
+- Excel preview stages rows without changing products or stock. Owners review flagged rows before approval.
+- Blank cells preserve existing matched-product values; explicit zero is retained.
+- Excel quantities set target balances per selected location. A movement records the difference.
+- Re-uploading a pending workbook resumes that preview. Re-uploading an applied workbook starts a new synchronization batch.
+- New fitments remain pending; existing fitments are not removed; imported products remain private.
+- Apply locking is recoverable. D1 writes occur in bounded atomic chunks; failed chunks stay pending.
+- The JSON backup has a SHA-256 checksum but is not a native D1 dump and has no restore implementation.
 
-The product and stock-management routes are deployed to the isolated test Worker. The current work is isolated on `feature/admin-import-sync-v2` and PR #13, based on `feature/inventory-management`. The latest PR #13 code is deployed to the isolated test Worker, including matched-product synchronization, row correction, repeat workbook synchronization, analytics, Excel export and a downloadable application-data backup. Production remains unchanged.
+## Migrations and local checks
 
-## Deployment and test status
+The append-only sequence is `0001`–`0009`. `wrangler.test.jsonc` points at `../migrations` so a clean local database can exercise the full chain.
 
-- Migrations `0001` through `0009` are applied to the isolated test D1 database only. Migration `0004` seeds Hyundai, Kia and SsangYong vehicle brands; `0005` adds movement-driven balance triggers; `0006` fixes outbound balance updates while preserving the non-negative stock constraint; `0007` stages Excel imports; `0008` adds the recoverable apply lock; `0009` separates workbook content hashes from unique batch identifiers to allow a previously applied workbook to be synchronized again. Production D1 remains untouched.
-- The latest PR #13 build is deployed to the isolated test Worker, bound to `bakkar-inventory-test`. Its `OWNER_EMAIL` secret binding and `ALLOWED_ORIGIN` setting were verified after deployment. GitHub Actions syntax, import tests and Wrangler dry-run checks passed. Direct runtime HTTP checks from the connected tool environment are blocked with a 403 network restriction, so browser end-to-end behavior still needs owner verification.
-- The test Worker retains `OWNER_EMAIL`; the one-time `BOOTSTRAP_SECRET` was removed after owner setup.
-- Production Worker and production D1 have not been changed.
-- Remaining verification: browser/API checks for valid and invalid login, IP throttling, malformed and oversized bodies, same-origin rejection, logout, and session expiry. Do not claim these checks passed until performed.
-
-Do not put the owner email, bootstrap secret, password, session token or other credentials in this repository. Never ask the user to paste secrets into chat.
-
-## Security notes and limitations
-
-- Admin cookies are scoped to this Worker hostname, so the administration UI is served from the same origin. The public Pages site does not share or require this session.
-- State-changing authentication requests require a same-origin `Origin`, a same-origin Fetch Metadata value when supplied, and JSON content type. Authentication request bodies are size-limited and validated before parsing. The session cookie is HttpOnly, Secure and SameSite=Strict.
-- Login attempts are throttled per email+IP (five failures per 15-minute window) and per IP across accounts (20 failures per 15-minute window). Expired throttle records and old expired sessions are opportunistically cleaned during login. This D1-backed limit is a basic safeguard, not a substitute for an edge rate-limiting service against distributed attacks.
-- Password hashes use PBKDF2-HMAC-SHA256 with a unique random salt and 100,000 iterations. Stored hashes are compared with `crypto.subtle.timingSafeEqual`; unknown accounts still incur a dummy derivation to reduce account-enumeration timing differences. Passwords are never stored in plaintext.
-- Sessions expire after eight hours; logout deletes the server-side session.
-- Public output is allow-listed and excludes purchase prices, internal notes, exact inventory balances, staff records, import records and audit history.
-- SQL values use prepared statements. Errors returned to clients are generic; detailed failures are written to Worker logs.
-- CORS is restricted to the public Pages origin for the public catalog. CORS is not an authentication mechanism.
-- Owner-only product, location and stock-movement write routes are present in the isolated test Worker and require a valid owner session plus same-origin requests. PR #13 adds owner-only analytics, Excel export, application-data backup and safer Excel synchronization; these routes are deployed on the test Worker. Production Pages, Worker and D1 remain unchanged.
-- The downloadable JSON backup includes brands, categories, locations, products, fitments, balances, stock movements, audit history and import history. It intentionally excludes password hashes, active sessions, login throttles and staff-account credentials. It is an application-data snapshot, not a native D1 SQL dump or a one-click database restore.
-
-## Local development
-
-Install a current Node.js LTS and Wrangler, then run from this directory:
-
-```bash
-npm install
-npx wrangler dev
+```sh
+npm ci
+npm test
+npm exec -- wrangler d1 migrations apply bakkar-inventory-test --local --config wrangler.test.jsonc --persist-to .wrangler/local-d1 --force
+npm exec -- wrangler d1 execute bakkar-inventory-test --local --config wrangler.test.jsonc --persist-to .wrangler/local-d1 --file test/fixtures/synthetic-catalog.sql
+npm exec -- wrangler dev --local --config wrangler.test.jsonc --persist-to .wrangler/local-d1
+npm exec -- wrangler deploy --dry-run --config wrangler.test.jsonc
 ```
 
-Use synthetic test data locally. Do not point local development at production D1 for routine testing.
+Use a fresh local persistence path for the synthetic fixture. It contains synthetic products and a local-only owner session; never run it against remote D1. Local D1 validation does not verify the existing remote test D1 migration ledger.
 
-## Learning notes
+## Environment and release operations
 
-- **Worker**: the server-side program that receives HTTP requests and talks to D1.
-- **D1**: the managed SQL database and source of truth.
-- **Session cookie**: a browser-held random token that is HttpOnly; only its hash is stored in D1.
-- **PBKDF2**: a password-based key derivation function that makes offline guessing more expensive.
-- **Bootstrap secret**: a temporary secret used only once to create the first owner account.
-- **Prepared statement**: SQL with placeholders, keeping user input separate from SQL code.
+- `wrangler.jsonc` binds production D1. Do not use it for tests or local development.
+- `wrangler.test.jsonc` binds test D1. `--local` is required for repository migration checks.
+- `ALLOWED_ORIGIN` must match the Pages origin for public cross-origin requests.
+- Owner bootstrap credentials are Worker secret bindings and stay outside source control. Never log or print their values.
+- Do not deploy Workers/Pages or apply remote migrations as part of local validation. Production deployment, production migrations, and production secrets require separate approval.
 
+## Known limitations
 
-## Inventory management implementation (not deployed)
-
-- Work is isolated on `feature/inventory-management`, based on `feature/inventory-foundation`.
-- Added owner-only product create/read/update/archive routes, vehicle-fitment validation, reference-data reads, storage-location creation, stock-movement creation and movement-history reads.
-- Added an initial Arabic owner dashboard for those operations. Product editing preserves existing category, aliases, internal notes and additional vehicle fitments not currently exposed as editable fields.
-- Product updates use a version field to reject stale edits. Product archive is soft-delete so references and audit history remain intact.
-- Stock movements are the source of truth: database triggers apply each inserted movement to the balance and reject a movement that would make stock negative. Migration `0006` uses a non-negative insert placeholder before the conflict update so outbound movements do not violate the balance table CHECK constraint. The API no longer relies on connection-scoped `changes()` state across a D1 batch.
-- The outbound trigger fix was verified directly against the isolated test D1: a one-unit outbound movement reduced 74 to 73, a compensating inbound test movement restored it to 74, and an attempted outbound movement of 100 was rejected as insufficient stock. These were database-level trigger tests, not browser/API end-to-end tests.
-- Added `wrangler.test.jsonc` and explicit `dev:test` / `deploy:test` scripts so test commands target the isolated test D1 database, not the production database configured in `wrangler.jsonc`.
-- Added a GitHub Actions syntax check for both Worker modules.
-- Not yet verified: deployed runtime behavior for the new routes, atomic stock updates, concurrency behavior, or browser UI integration. Do not deploy to either Worker until syntax checks and test-environment validation are complete.
-
-
-## Excel inventory synchronization (PR #13, not deployed)
-
-- The accepted workbook uses the 12 Arabic columns:
-  `الماركة، اسم القطعة، موديل السيارة، من سنة، إلى سنة، الكمية، سعر البيع (ج.م)، سعر الشراء (ج.م)، الحالة، مكان التخزين، كود القطعة، ملاحظات`.
-- The browser reads the first worksheet with SheetJS 0.20.3 from the official CDN. Current conservative limits are 2 MiB and 100 data rows.
-- Preview stages original row values, normalized fields, warnings and candidate matches in D1. It does not change products, stock balances or movements.
-- The owner can edit any staged row field, save it and rerun validation/candidate detection before choosing create, match or skip.
-- Candidate searches are batched. Arabic/Persian digits, explicit zero, blank values, invalid numbers, placeholders, year ranges, unknown brands/locations, cross-location notes and duplicate candidates are handled explicitly.
-- A previously applied workbook may be uploaded again as a new synchronization batch. A matching batch still waiting for review is resumed instead of duplicated. Migration `0009` stores the content hash separately from the unique batch identifier.
-- On a matched row, non-empty source values update the existing product name, condition, code, prices and notes. Blank cells preserve existing website values; zero remains an explicit value. New fitments are added as pending and existing fitments are not silently deleted or confirmed.
-- Excel quantity is a target balance for the selected product/location, not an additive quantity. A stock movement records the difference. Missing quantity or location does not change stock.
-- Import-created products remain private and fitments remain pending. Import never publishes a product automatically.
-- Applying a batch uses an expiring lock and D1 batch transactions in chunks. Failed chunks remain pending for review/retry; successful chunks remain committed and are reported separately.
-- PR #13 includes unit tests for safe matched-field updates and CI syntax, test and Wrangler dry-run checks. These checks do not replace browser/API runtime tests on the deployed test Worker.
-- No production Worker deployment, production migration or production inventory import has been performed.
-
-## Admin analytics and exports (PR #13, not deployed)
-
-- The analytics endpoint aggregates active products, stock units, estimated purchase/sale values, missing fields, fitment review, location totals, brand totals, recent movements and import history.
-- Excel export generates the same 12-column Arabic workbook and expands multiple locations/fitments without repeating stock quantities.
-- The JSON application-data backup includes operational data and history with a SHA-256 checksum. It excludes authentication/session tables and is not a native D1 SQL backup. A separate tested restore workflow is still required before claiming one-click restoration.
+- The public catalog has no demo fallback. With no public products it shows an empty catalog and keeps the existing WhatsApp request path.
+- The current root site does not store customer inquiry submissions; it prepares a WhatsApp message.
+- No browser-driven end-to-end check against the deployed test Worker was completed in this integration turn.
+- The remote test D1's current migration ledger and data counts have not been independently inspected here.

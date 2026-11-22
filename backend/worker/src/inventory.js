@@ -486,4 +486,4 @@ async function handleInventoryAdmin(request, url, env, session) {
   return null;
 }
 
-export { handleInventoryAdmin };
+export { handleInventoryAdmin, validateProduct, validateFitments, normalizePartKey };

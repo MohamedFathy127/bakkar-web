@@ -16,6 +16,7 @@
 <meta name="twitter:image" content="https://bakkar-web.pages.dev/bakkar-logo.png">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="bakkar-api-base" content="https://bakkar-inventory-api.mohamedfathy12127.workers.dev">
 <title>بكار لقطع غيار السيارات — BAKKAR</title>
 <script type="application/ld+json">
 {
@@ -111,10 +112,11 @@ body{background:#F6F5F3;color:#1F1D1B;font-family:Cairo,sans-serif}
   <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
    <select id="dBrand" class="inp" onchange="fillModels()"><option value="">الماركة</option></select>
    <select id="dModel" class="inp" onchange="renderDiscover()"><option value="">الموديل</option></select>
-   <input id="dYear" type="number" min="1995" max="2026" placeholder="سنة الصنع" class="inp" oninput="renderDiscover()">
+   <input id="dYear" type="number" min="1900" max="2100" placeholder="سنة الصنع" class="inp" oninput="renderDiscover()">
    <select id="dCat" class="inp" onchange="renderDiscover()"><option value="">كل الأقسام</option></select>
   </div>
   <div id="dOut" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+  <button id="loadMoreDiscover" class="hidden mx-auto" type="button" onclick="loadMoreDiscover()">عرض المزيد</button>
  </section>
 
  <!-- 4/5. الكتالوج -->
@@ -128,6 +130,9 @@ body{background:#F6F5F3;color:#1F1D1B;font-family:Cairo,sans-serif}
    <span class="text-xs text-stone-500 font-semibold text-center">النتائج: <b id="cnt">0</b></span>
   </div>
   <div id="grid" class="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+  <div id="catalogStatus" class="hidden text-sm text-stone-500 text-center p-4" role="status" aria-live="polite"></div>
+  <button id="loadMoreCatalog" class="hidden mx-auto" type="button" onclick="loadMoreCatalog()">عرض المزيد</button>
+  <div id="catalogError" class="hidden card p-5 text-center" role="alert"><p>تعذر تحميل الكتالوج الآن.</p><button type="button" class="btn mt-3" onclick="initializeCatalog()">إعادة المحاولة</button></div>
   <div id="empty" class="hidden card p-8 text-center space-y-3">
    <p class="font-bold">ملقيناش قطعة مطابقة</p>
    <p class="text-sm text-stone-500">جرب كلمة تانية (مثلاً اسم شائع أو بالإنجليزي) أو اطلب القطعة منّا.</p>
@@ -202,115 +207,184 @@ body{background:#F6F5F3;color:#1F1D1B;font-family:Cairo,sans-serif}
  </div>
 </div>
 
-<script>
-// ===== بيانات تجريبية (Demo) — لا يوجد Backend أو تخزين =====
+<script type="module">
+import { mapCatalogProduct, fitsVehicle, formatYears, escapeHtml, catalogQuery } from './catalog-client.mjs';
 const PHONE='201006818187',PHONE2='201006533302';
-const P=[
-{id:1,code:'BKR-SY-101',ar:'تيربو كامل',en:'Turbocharger',brand:'SsangYong',car:'Rexton',y1:2013,y2:2015,cat:'موتور وتبريد',cond:'استيراد',price:null,ok:1,alias:'تربو توربو'},
-{id:2,code:'BKR-HY-204',ar:'مساعد خلفي',en:'Rear Shock Absorber',brand:'Hyundai',car:'Sonata',y1:2013,y2:2017,cat:'عفشة وفرامل',cond:'جديدة',price:null,ok:1,alias:'ممتص صدمات شوك'},
-{id:3,code:'BKR-KI-308',ar:'مساعد خلفي',en:'Rear Shock Absorber',brand:'Kia',car:'Optima',y1:2018,y2:2018,cat:'عفشة وفرامل',cond:'جديدة',price:null,ok:1,alias:'ممتص صدمات شوك'},
-{id:4,code:'BKR-KI-112',ar:'خرطوم ردياتير علوي',en:'Upper Radiator Hose',brand:'Kia',car:'Cerato',y1:2013,y2:2015,cat:'موتور وتبريد',cond:'جديدة',price:null,ok:1,alias:'شلمون خرطوم مياه'},
-{id:5,code:'BKR-KI-405',ar:'فانوس أمامي ليد',en:'LED Headlight',brand:'Kia',car:'Carens',y1:2019,y2:2024,cat:'فوانيس',cond:'استيراد',price:null,ok:1,alias:'فنار كشاف لمبة'},
-{id:6,code:'BKR-SY-119',ar:'خرطوم ردياتير علوي',en:'Upper Radiator Hose',brand:'SsangYong',car:'Tivoli',y1:2017,y2:2022,cat:'موتور وتبريد',cond:'جديدة',price:null,ok:1,alias:'شلمون خرطوم مياه'},
-{id:7,code:'BKR-HY-310',ar:'طقم تيل فرامل أمامي',en:'Front Brake Pads',brand:'Hyundai',car:'Elantra',y1:2012,y2:2020,cat:'عفشة وفرامل',cond:'جديدة',price:null,ok:1,alias:'فحمات فرامل'},
-{id:8,code:'BKR-KI-215',ar:'طرمبة بنزين كاملة',en:'Fuel Pump Assembly',brand:'Kia',car:'Sportage',y1:2016,y2:2021,cat:'كهرباء',cond:'جديدة',price:null,ok:1,alias:'بمب بنزين عوامة'},
-{id:9,code:'BKR-HY-402',ar:'موبينة إشعال',en:'Ignition Coil',brand:'Hyundai',car:'Tucson',y1:2016,y2:2021,cat:'كهرباء',cond:'جديدة',price:null,ok:0,alias:'كويل بوبينة'},
-{id:10,code:'BKR-SY-208',ar:'طقم جلب مقصات أمامي',en:'Front Control Arm Bushings',brand:'SsangYong',car:'Korando',y1:2014,y2:2019,cat:'عفشة وفرامل',cond:'جديدة',price:null,ok:1,alias:'بوش مقص'},
-{id:11,code:'BKR-HY-501',ar:'فانوس خلفي ليد',en:'LED Tail Light',brand:'Hyundai',car:'Tucson',y1:2021,y2:2024,cat:'فوانيس',cond:'استيراد',price:null,ok:1,alias:'فنار خلفي'},
-{id:12,code:'BKR-KI-509',ar:'ردياتير مياه ألومنيوم',en:'Aluminum Radiator',brand:'Kia',car:'Cerato',y1:2010,y2:2013,cat:'موتور وتبريد',cond:'جديدة',price:null,ok:1,alias:'رادياتير'}
-];
-const BR={Hyundai:{ar:'هيونداي',c:'bg-bk-hy',t:'text-bk-hy',hex:'#0055A5'},Kia:{ar:'كيا',c:'bg-bk-kia',t:'text-bk-kia',hex:'#BB162B'},SsangYong:{ar:'سانج يونج',c:'bg-bk-sy',t:'text-bk-sy',hex:'#2E5A44'}};
+const API_BASE=document.querySelector('meta[name="bakkar-api-base"]')?.content||'';
+const BRAND_STYLE={Hyundai:{c:'bg-bk-hy',t:'text-bk-hy',hex:'#0055A5'},Kia:{c:'bg-bk-kia',t:'text-bk-kia',hex:'#BB162B'},SsangYong:{c:'bg-bk-sy',t:'text-bk-sy',hex:'#2E5A44'}};
+let P=[],BR={},cats=[],conditions=[],modelsByBrand={},discoverProducts=[];
+const productCache=new Map();
+let catalogCursor=null,catalogHasMore=false,catalogSequence=0,catalogController=null,catalogLoading=false;
+let discoverCursor=null,discoverHasMore=false,discoverSequence=0;
+let suggestionSequence=0,searchTimer=null;
 const $=id=>document.getElementById(id);
 const uniq=a=>[...new Set(a)];
-const cats=uniq(P.map(p=>p.cat));
 const norm=s=>(s||'').toString().toLowerCase();
-const price=p=>p.price?p.price.toLocaleString('ar-EG')+' ج.م ':'<span class="text-sm text-stone-500">السعر عند التواصل</span>';
-const years=p=>p.y1===p.y2?p.y1:p.y1+'–'+p.y2;
+const price=p=>p.price!==null?p.price.toLocaleString('ar-EG')+' ج.م ':'<span class="text-sm text-stone-500">السعر عند التواصل</span>';
+const years=p=>formatYears(p);
 const waLink=t=>`https://wa.me/${PHONE}?text=${encodeURIComponent(t)}`;
 const prodMsg=p=>`السلام عليكم بكار، عايز أستفسر عن: ${p.ar} (${p.en})\nالسيارة: ${p.brand} ${p.car} ${years(p)}\nكود: ${p.code}\nممكن تأكدولي السعر والتوفر؟`;
 
-// تهيئة
-['dBrand','fBrand','aBrand'].forEach(id=>Object.keys(BR).forEach(b=>$(id).add(new Option(b,b))));
-['dCat','fCat'].forEach(id=>cats.forEach(c=>$(id).add(new Option(c,c))));
+async function publicApi(path,signal){
+ const response=await fetch(API_BASE+path,{headers:{accept:'application/json'},signal});
+ const data=await response.json().catch(()=>({error:'استجابة غير مفهومة'}));
+ if(!response.ok)throw new Error(data.error||'تعذر تحميل بيانات الكتالوج.');
+ return data;
+}
+function replaceOptions(id,items,placeholder,label=value=>value){
+ const select=$(id),current=select.value;
+ select.replaceChildren(new Option(placeholder,''));
+ for(const item of items){const value=typeof item==='string'?item:item.value;select.add(new Option(label(value,item),value))}
+ if([...select.options].some(option=>option.value===current))select.value=current;
+}
+function renderBrandCards(metaBrands){
+ $('brandCards').innerHTML=metaBrands.map(item=>{
+  const name=item.name_en,style=BR[name]||{c:'bg-bk-dark',t:'text-bk-dark',hex:'#292929'};
+  const brandModels=modelsByBrand[name]||[];
+  return `<button data-brand="${escapeHtml(name)}" class="card text-right overflow-hidden hover:shadow-lg transition">
+   <div class="h-1 ${style.c}"></div><div class="p-4 flex items-center justify-between"><div>
+   <p class="font-black text-lg">${escapeHtml(name)} <span class="text-xs text-stone-400 font-semibold">${escapeHtml(item.name_ar)}</span></p>
+   <p class="text-xs text-stone-500 mt-1">${Number(item.product_count||0).toLocaleString('ar-EG')} صنف • ${brandModels.slice(0,4).map(escapeHtml).join(' • ')}</p></div>
+   <span class="w-11 h-11 rounded-xl flex items-center justify-center text-white font-black ${style.c}">${escapeHtml(name.slice(0,1))}</span></div></button>`;
+ }).join('');
+ $('brandCards').querySelectorAll('[data-brand]').forEach(button=>button.addEventListener('click',()=>pickBrand(button.dataset.brand)));
+}
+function applyCatalogMeta(meta){
+ BR=Object.fromEntries((meta.brands||[]).map(item=>[item.name_en,{ar:item.name_ar,...(BRAND_STYLE[item.name_en]||{c:'bg-bk-dark',t:'text-bk-dark',hex:'#292929'})}]));
+ cats=(meta.categories||[]).map(item=>item.name).filter(Boolean);
+ conditions=(meta.conditions||[]).map(item=>item.name).filter(Boolean);
+ modelsByBrand={};
+ for(const item of meta.models||[]){(modelsByBrand[item.brand]||= []).push(item.model)}
+ for(const list of Object.values(modelsByBrand))list.sort((a,b)=>a.localeCompare(b));
+ const brandLabel=name=>`${BR[name].ar} — ${name}`;
+ replaceOptions('dBrand',Object.keys(BR),'الماركة',brandLabel);
+ replaceOptions('fBrand',Object.keys(BR),'كل الماركات',brandLabel);
+ replaceOptions('aBrand',Object.keys(BR),'اختر الماركة',brandLabel);
+ replaceOptions('dCat',cats,'كل الأقسام');replaceOptions('fCat',cats,'كل الأقسام');
+ replaceOptions('fCond',conditions,'كل الحالات');
+ fillModels();renderBrandCards(meta.brands||[]);
+}
+async function initializeCatalog(){
+ $('catalogError').classList.add('hidden');$('catalogStatus').textContent='جارٍ تحميل المنتجات المنشورة...';$('catalogStatus').classList.remove('hidden');
+ try{const meta=await publicApi('/api/catalog/meta');applyCatalogMeta(meta);await renderCatalog()}
+ catch(error){$('catalogStatus').classList.add('hidden');$('catalogError').classList.remove('hidden');console.error('catalog_load_failed',error)}
+}
 $('wa1').href=waLink('السلام عليكم بكار، عندي استفسار');$('wa2').href=`https://wa.me/${PHONE2}?text=${encodeURIComponent('السلام عليكم بكار، عندي استفسار')}`;$('waFloat').href=$('wa1').href;
-$('brandCards').innerHTML=Object.keys(BR).map(b=>{const n=P.filter(p=>p.brand===b).length;return `
-<button onclick="pickBrand('${b}')" class="card text-right overflow-hidden hover:shadow-lg transition">
- <div class="h-1 ${BR[b].c}"></div>
- <div class="p-4 flex items-center justify-between"><div><p class="font-black text-lg">${b} <span class="text-xs text-stone-400 font-semibold">${BR[b].ar}</span></p>
- <p class="text-xs text-stone-500 mt-1">${n} صنف • ${uniq(P.filter(p=>p.brand===b).map(p=>p.car)).join(' • ')}</p></div>
- <span class="w-11 h-11 rounded-xl flex items-center justify-center text-white font-black ${BR[b].c}">${b[0]}</span></div></button>`}).join('');
-
 function pickBrand(b){$('fBrand').value=b;$('dBrand').value=b;fillModels();renderCatalog();$('catalog').scrollIntoView({behavior:'smooth'})}
 
-// البحث + اقتراحات
-function haystack(p){return norm([p.ar,p.en,p.code,p.brand,BR[p.brand].ar,p.car,p.cat,p.alias,p.cond].join(' '))}
-function onSearch(){
- const v=norm($('q').value).trim();const s=$('sugg');
- renderCatalog();
- if(!v){s.classList.add('hidden');return}
- const m=P.filter(p=>haystack(p).includes(v)).slice(0,5);
- s.innerHTML=m.length?m.map(p=>`<button class="block w-full text-right px-4 py-2 hover:bg-stone-100" onclick="openModal(${p.id});$('sugg').classList.add('hidden')"><b>${p.ar}</b> <span class="text-xs text-stone-500">${p.brand} ${p.car} • ${p.code}</span></button>`).join(''):
-  `<a href="#ask" onclick="setMode('missing');$('sugg').classList.add('hidden')" class="block px-4 py-2 text-stone-600">مفيش نتيجة — اطلب القطعة من بكار ←</a>`;
- s.classList.remove('hidden');
+// البحث + اقتراحات من الكتالوج المنشور
+function haystack(p){return norm([p.ar,p.en,p.code,p.brand,p.brandAr,p.car,p.cat,p.cond,...(p.fitments||[]).flatMap(f=>[f.brand,f.brandAr,f.model])].join(' '))}
+function catalogFilters(){return {q:$('q').value.trim(),brand:$('fBrand').value,category:$('fCat').value,condition:$('fCond').value}}
+function catalogSort(){return ({p1:'price_asc',p2:'price_desc',n:'name'})[$('fSort').value]||'id'}
+function drawCatalog(){
+ $('grid').innerHTML=P.map(card).join('');$('cnt').textContent=P.length;
+ $('empty').classList.toggle('hidden',P.length>0);$('loadMoreCatalog').classList.toggle('hidden',!catalogHasMore);
+ $('loadMoreCatalog').disabled=catalogLoading;
+ $('grid').querySelectorAll('[data-open-product]').forEach(button=>button.addEventListener('click',()=>openModal(button.dataset.openProduct)));
 }
-document.addEventListener('click',e=>{if(!e.target.closest('#q,#sugg'))$('sugg').classList.add('hidden')});
+async function renderCatalog({append=false}={}){
+ if(append&&(!catalogHasMore||catalogLoading))return;
+ if(catalogController)catalogController.abort();catalogController=new AbortController();
+ const sequence=++catalogSequence,signal=catalogController.signal,filters=catalogFilters(),sort=catalogSort();
+ if(!append){catalogCursor=null;catalogHasMore=false;P=[];drawCatalog();$('empty').classList.add('hidden');$('catalogError').classList.add('hidden')}
+ catalogLoading=true;$('catalogStatus').textContent=append?'جارٍ تحميل المزيد...':'جارٍ تحميل المنتجات المنشورة...';$('catalogStatus').classList.remove('hidden');$('loadMoreCatalog').disabled=true;
+ try{
+  const query=catalogQuery(filters,{limit:24,cursor:append?catalogCursor:'',sort});
+  const result=await publicApi('/api/catalog?'+query,signal);
+  if(sequence!==catalogSequence)return;
+  const items=(result.data||[]).map(mapCatalogProduct).filter(item=>item.id);
+  for(const item of items)productCache.set(item.id,item);
+  P=append?[...P,...items]:items;catalogCursor=result.pagination?.next_cursor||null;catalogHasMore=Boolean(result.pagination?.has_more);
+  drawCatalog();$('catalogError').classList.add('hidden');
+  $('catalogStatus').textContent=catalogHasMore?`تم تحميل ${P.length.toLocaleString('ar-EG')} صنفًا من الكتالوج المنشور.`:`تم تحميل ${P.length.toLocaleString('ar-EG')} صنفًا منشورًا.`;
+ }catch(error){
+  if(error.name==='AbortError'||sequence!==catalogSequence)return;
+  $('catalogError').classList.remove('hidden');$('empty').classList.add('hidden');$('catalogStatus').textContent='';console.error('catalog_query_failed',error);
+ }finally{
+  if(sequence===catalogSequence){catalogLoading=false;$('catalogStatus').classList.toggle('hidden',!$('catalogStatus').textContent);$('loadMoreCatalog').disabled=false}
+ }
+}
+function loadMoreCatalog(){return renderCatalog({append:true})}
+async function onSearch(){
+ clearTimeout(searchTimer);searchTimer=setTimeout(()=>renderCatalog(),250);
+ const value=$('q').value.trim(),box=$('sugg'),sequence=++suggestionSequence;
+ if(!value){box.classList.add('hidden');box.replaceChildren();return}
+ try{
+  const result=await publicApi('/api/catalog?'+catalogQuery({q:value},{limit:5}));
+  if(sequence!==suggestionSequence)return;
+  const matches=(result.data||[]).map(mapCatalogProduct).filter(item=>item.id);
+  for(const item of matches)productCache.set(item.id,item);
+  box.innerHTML=matches.length?matches.map(item=>`<button type="button" data-suggestion="${escapeHtml(item.id)}" class="block w-full text-right px-4 py-2 hover:bg-stone-100"><b>${escapeHtml(item.ar)}</b> <span class="text-xs text-stone-500">${escapeHtml(item.brand)} ${escapeHtml(item.car)} • ${escapeHtml(item.code)}</span></button>`).join(''):
+   `<a href="#ask" class="block px-4 py-2 text-stone-600" data-no-result>مفيش نتيجة — اطلب القطعة من بكار ←</a>`;
+  box.querySelectorAll('[data-suggestion]').forEach(button=>button.addEventListener('click',()=>{box.classList.add('hidden');openModal(button.dataset.suggestion)}));
+  box.querySelector('[data-no-result]')?.addEventListener('click',()=>setMode('missing'));
+  box.classList.remove('hidden');
+ }catch(error){if(error.name!=='AbortError')console.error('catalog_suggestions_failed',error)}
+}
+document.addEventListener('click',event=>{if(!event.target.closest('#q,#sugg'))$('sugg').classList.add('hidden')});
 
-// كارت منتج
-function card(p){const b=BR[p.brand];return `
-<article class="card overflow-hidden flex flex-col justify-between">
- <div class="h-1 ${b.c}"></div>
- <div class="p-4 space-y-2 cursor-pointer" onclick="openModal(${p.id})">
-  <div class="flex justify-between items-center text-[11px] font-bold"><span class="${b.t}">${p.brand}</span><span class="bg-stone-100 rounded px-2 py-0.5">${p.cond}</span></div>
-  <h3 class="font-black leading-snug">${p.ar}</h3>
-  <p class="text-xs text-stone-500" dir="ltr" style="text-align:right">${p.en}</p>
-  <p class="text-xs text-stone-600">🚘 ${p.brand} ${p.car} ${years(p)}</p>
-  <p class="text-[11px] font-mono text-stone-400">${p.code}</p>
- </div>
- <div class="px-4 pb-4 flex items-center justify-between gap-2"><span class="font-black">${price(p)}</span>
-  <a target="_blank" rel="noopener" href="${waLink(prodMsg(p))}" class="wa !px-3 !py-2 !text-xs">اسأل</a></div>
-</article>`}
-
-function renderCatalog(){
- const v=norm($('q').value).trim(),b=$('fBrand').value,c=$('fCat').value,d=$('fCond').value,s=$('fSort').value;
- let r=P.filter(p=>(!b||p.brand===b)&&(!c||p.cat===c)&&(!d||p.cond===d)&&(!v||haystack(p).includes(v)));
- if(s==='p1')r.sort((x,y)=>(x.price??9e9)-(y.price??9e9));
- if(s==='p2')r.sort((x,y)=>(y.price??-1)-(x.price??-1));
- if(s==='n')r.sort((x,y)=>x.ar.localeCompare(y.ar,'ar'));
- $('cnt').textContent=r.length;$('grid').innerHTML=r.map(card).join('');
- $('empty').classList.toggle('hidden',r.length>0);
+// كارت منتج من البيانات العامة المسموح بها
+function card(p){
+ const brand=BR[p.brand]||{c:'bg-bk-dark',t:'text-bk-dark'};
+ const fitmentText=(p.fitments||[]).slice(0,2).map(f=>`${f.brand} ${f.model} ${formatYears({y1:f.yearFrom,y2:f.yearTo})}`).join(' • ');
+ const availability=p.inStock?'متاح — اسأل عن الكمية':'اسأل عن التوفر';
+ return `<article class="card overflow-hidden flex flex-col justify-between"><div class="h-1 ${brand.c}"></div>
+  <button type="button" data-open-product="${escapeHtml(p.id)}" class="p-4 space-y-2 text-right w-full cursor-pointer">
+   <div class="flex justify-between items-center text-[11px] font-bold"><span class="${brand.t}">${escapeHtml(p.brand)}</span><span class="bg-stone-100 rounded px-2 py-0.5">${escapeHtml(p.cond)}</span></div>
+   <h3 class="font-black leading-snug">${escapeHtml(p.ar)}</h3><p class="text-xs text-stone-500" dir="ltr" style="text-align:right">${escapeHtml(p.en)}</p>
+   <p class="text-xs text-stone-600">🚘 ${escapeHtml(fitmentText)}</p><p class="text-[11px] font-mono text-stone-400">${escapeHtml(p.code)}</p>
+  </button><div class="px-4 pb-4 flex items-center justify-between gap-2"><span class="font-black">${price(p)}</span>
+   <span class="text-xs text-stone-500">${availability}</span><a target="_blank" rel="noopener" href="${waLink(prodMsg(p))}" class="wa !px-3 !py-2 !text-xs">اسأل</a></div></article>`;
 }
 
-// Smart Discovery
+// Smart Discovery من API مع مطابقة فعلية للموديل والسنة
 function fillModels(){
- const b=$('dBrand').value,m=$('dModel');m.innerHTML='<option value="">الموديل</option>';
- uniq(P.filter(p=>!b||p.brand===b).map(p=>p.car)).forEach(c=>m.add(new Option(c,c)));renderDiscover();
+ const brand=$('dBrand').value,select=$('dModel'),current=select.value;
+ const options=brand?(modelsByBrand[brand]||[]):Object.values(modelsByBrand).flat();
+ replaceOptions('dModel',uniq(options).sort((a,b)=>a.localeCompare(b)),'الموديل');
+ if(options.includes(current))select.value=current;
+ discoverCursor=null;discoverHasMore=false;renderDiscover();
 }
-function renderDiscover(){
- const b=$('dBrand').value,m=$('dModel').value,y=+$('dYear').value,c=$('dCat').value,o=$('dOut');
- if(!b&&!m&&!y&&!c){o.innerHTML='<p class="text-xs text-stone-400 col-span-full">اختار الماركة أو الموديل عشان نعرض القطع.</p>';return}
- const r=P.filter(p=>p.ok&&(!b||p.brand===b)&&(!m||p.car===m)&&(!y||(y>=p.y1&&y<=p.y2))&&(!c||p.cat===c));
- o.innerHTML=r.length?r.map(card).join(''):`<div class="col-span-full text-sm text-stone-600">مفيش توافق مؤكد للاختيار ده. <a href="#ask" onclick="setMode('ask')" class="text-bk-red font-bold underline">اطلب مساعدة بكار</a></div>`;
+async function renderDiscover({append=false}={}){
+ const brand=$('dBrand').value,model=$('dModel').value,year=$('dYear').value,category=$('dCat').value,out=$('dOut');
+ if(!brand&&!model&&!year&&!category){discoverSequence++;discoverCursor=null;discoverHasMore=false;discoverProducts=[];$('loadMoreDiscover').classList.add('hidden');out.innerHTML='<p class="text-xs text-stone-400 col-span-full">اختار الماركة أو الموديل عشان نعرض القطع.</p>';return}
+ const sequence=++discoverSequence;
+ if(!append){discoverCursor=null;out.innerHTML='<p class="text-xs text-stone-400 col-span-full">جارٍ البحث في التوافقات المؤكدة...</p>'}
+ try{
+  const query=catalogQuery({brand,model,year,category},{limit:24,cursor:append?discoverCursor:''});
+  const result=await publicApi('/api/catalog?'+query);
+  if(sequence!==discoverSequence)return;
+  const items=(result.data||[]).map(mapCatalogProduct).filter(item=>item.id&&fitsVehicle(item,{brand,model,year:year?Number(year):null}));
+  for(const item of items)productCache.set(item.id,item);
+  discoverProducts=append?[...discoverProducts,...items]:items;
+  discoverCursor=result.pagination?.next_cursor||null;discoverHasMore=Boolean(result.pagination?.has_more);
+  out.innerHTML=discoverProducts.length?discoverProducts.map(item=>`<div data-discover-id="${escapeHtml(item.id)}">${card(item)}</div>`).join(''):
+   `<div class="col-span-full text-sm text-stone-600">مفيش توافق مؤكد للاختيار ده. <a href="#ask" data-discover-help class="text-bk-red font-bold underline">اطلب مساعدة بكار</a></div>`;
+  out.querySelectorAll('[data-open-product]').forEach(button=>button.addEventListener('click',()=>openModal(button.dataset.openProduct)));
+  out.querySelector('[data-discover-help]')?.addEventListener('click',()=>setMode('ask'));
+  $('loadMoreDiscover').classList.toggle('hidden',!discoverHasMore);
+ }catch(error){if(error.name!=='AbortError'&&sequence===discoverSequence){out.innerHTML='<p class="text-sm text-red-700 col-span-full">تعذر تحميل التوافقات. أعد المحاولة بعد قليل.</p>';console.error('catalog_discovery_failed',error)}}
 }
+function loadMoreDiscover(){return renderDiscover({append:true})}
 
-// نافذة القطعة
+// نافذة تفاصيل القطعة
 function openModal(id){
- const p=P.find(x=>x.id===id),b=BR[p.brand];
- $('mBar').style.background=b.hex;
- const rel=P.filter(x=>x.id!==id&&(x.car===p.car||x.cat===p.cat&&x.brand===p.brand)).slice(0,3);
- $('mBody').innerHTML=`
- <div class="flex justify-between items-start gap-3"><div><span class="text-xs font-bold ${b.t}">${p.brand}</span>
-  <h3 class="text-xl font-black">${p.ar}</h3><p class="text-sm text-stone-500" dir="ltr" style="text-align:right">${p.en}</p></div>
+ const p=productCache.get(String(id))||P.find(item=>item.id===String(id));if(!p)return;
+ const brand=BR[p.brand]||{t:'text-bk-dark',hex:'#292929'};
+ $('mBar').style.background=brand.hex;
+ const fitments=(p.fitments||[]).map(f=>`<li>${escapeHtml(f.brand)} ${escapeHtml(f.model)} (${escapeHtml(formatYears({y1:f.yearFrom,y2:f.yearTo}))})</li>`).join('');
+ const related=P.filter(item=>item.id!==p.id&&((item.fitments||[]).some(f=>f.model===p.car)||item.cat===p.cat&&item.brand===p.brand)).slice(0,3);
+ $('mBody').innerHTML=`<div class="flex justify-between items-start gap-3"><div><span class="text-xs font-bold ${brand.t}">${escapeHtml(p.brand)}</span>
+  <h3 class="text-xl font-black">${escapeHtml(p.ar)}</h3><p class="text-sm text-stone-500" dir="ltr" style="text-align:right">${escapeHtml(p.en)}</p></div>
   <button onclick="closeModal()" class="bg-stone-100 w-8 h-8 rounded-lg font-bold">✕</button></div>
- <div class="bg-bk-bg border border-bk-line rounded-xl p-4 text-xs space-y-1 text-stone-600">
-  <p>رقم القطعة (Part No): <b class="font-mono text-stone-800">${p.code}</b></p>
-  <p>السيارة: <b class="text-stone-800">${p.brand} ${p.car} ${years(p)}</b> ${p.ok?'':'<span class="text-amber-700">(التوافق غير مؤكد)</span>'}</p>
-  <p>القسم: <b class="text-stone-800">${p.cat}</b> • الحالة: <b class="text-stone-800">${p.cond}</b></p>
-  <p>التوفر: <b class="text-stone-800">يُؤكَّد عند التواصل</b></p>
-  ${p.cond==='استيراد'?'<p class="text-amber-700">قطعة استيراد: ممكن يكون فيها خدوش أو عيوب بسيطة — اسأل عن حالتها الفعلية.</p>':''}
-  <p class="text-stone-400">لا توجد صورة فعلية للقطعة بعد، والوصف الفني يُضاف من بيانات المخزون.</p></div>
- <div class="flex items-center justify-between pt-1"><span class="text-xl font-black text-bk-red">${price(p)}</span>
+  <div class="bg-bk-bg border border-bk-line rounded-xl p-4 text-xs space-y-2 text-stone-600"><p>رقم القطعة: <b class="font-mono text-stone-800">${escapeHtml(p.code||'غير مسجل')}</b></p>
+  <p>التوافقات المؤكدة:</p><ul class="list-disc pr-5">${fitments||'<li>لا توجد تفاصيل توافق متاحة</li>'}</ul>
+  <p>القسم: <b class="text-stone-800">${escapeHtml(p.cat||'غير محدد')}</b> • الحالة: <b class="text-stone-800">${escapeHtml(p.cond||'غير محددة')}</b></p>
+  <p>التوفر: <b class="text-stone-800">${p.inStock?'متاح — اسأل عن الكمية':'اسأل عن التوفر'}</b></p></div>
+  <div class="flex items-center justify-between pt-1"><span class="text-xl font-black text-bk-red">${price(p)}</span>
   <a target="_blank" rel="noopener" href="${waLink(prodMsg(p))}" class="wa">💬 اسأل عن القطعة</a></div>
- ${rel.length?`<div class="pt-2 border-t border-bk-line"><p class="text-xs font-bold mb-2">منتجات ذات صلة</p><div class="space-y-1">${rel.map(x=>`<button onclick="openModal(${x.id})" class="block w-full text-right text-xs bg-bk-bg rounded-lg px-3 py-2">${x.ar} — ${x.brand} ${x.car} ${years(x)}</button>`).join('')}</div></div>`:''}`;
+  ${related.length?`<div class="pt-2 border-t border-bk-line"><p class="text-xs font-bold mb-2">منتجات ذات صلة</p><div class="space-y-1">${related.map(item=>`<button data-related-product="${escapeHtml(item.id)}" class="block w-full text-right text-xs bg-bk-bg rounded-lg px-3 py-2">${escapeHtml(item.ar)} — ${escapeHtml(item.brand)} ${escapeHtml(item.car)} ${escapeHtml(years(item))}</button>`).join('')}</div></div>`:''}`;
+ $('mBody').querySelectorAll('[data-related-product]').forEach(button=>button.addEventListener('click',()=>openModal(button.dataset.relatedProduct)));
  $('modal').classList.replace('hidden','flex');
 }
 function closeModal(){$('modal').classList.replace('flex','hidden')}
@@ -353,7 +427,8 @@ async function submitAsk(){
  $('aDone').innerHTML=`<p class="font-bold">تم تجهيز طلبك ✅ الرقم المرجعي: <span class="font-mono">${ref}</span></p>
  <a target="_blank" rel="noopener" href="${waLink(msg)}" class="wa inline-block">💬 أرسل الرسالة عبر واتساب</a>`;
 }
-setMode('ask');renderCatalog();renderDiscover();
+Object.assign(window,{initializeCatalog,loadMoreCatalog,loadMoreDiscover,pickBrand,onSearch,renderCatalog,fillModels,renderDiscover,openModal,closeModal,setMode,previewImg,submitAsk});
+setMode('ask');initializeCatalog();
 </script>
 </body>
 </html>

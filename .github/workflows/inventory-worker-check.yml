@@ -20,10 +20,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install locked Worker dependencies
+        working-directory: backend/worker
+        run: npm ci --no-audit --no-fund
       - name: Check Worker modules
         run: |
           node --check backend/worker/src/index.js
           node --check backend/worker/src/inventory.js
+          node --check backend/worker/src/excel-import.js
+          node --check backend/worker/src/catalog.js
       - name: Validate test Worker bundle and configuration
         working-directory: backend/worker
-        run: npx --yes wrangler@4 deploy --dry-run --config wrangler.test.jsonc
+        run: npm exec -- wrangler deploy --dry-run --config wrangler.test.jsonc

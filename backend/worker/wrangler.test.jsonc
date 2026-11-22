@@ -9,7 +9,8 @@
     {
       "binding": "DB",
       "database_name": "bakkar-inventory-test",
-      "database_id": "b9b6ed22-bc08-4cf1-998c-11dd8bc6a6e1"
+      "database_id": "b9b6ed22-bc08-4cf1-998c-11dd8bc6a6e1",
+      "migrations_dir": "../migrations"
     }
   ],
   "vars": {

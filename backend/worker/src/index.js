@@ -1,5 +1,6 @@
 import { handleInventoryAdmin } from "./inventory.js";
 import { handleExcelImport } from "./excel-import.js";
+import { handlePublicCatalog, handlePublicCatalogMeta } from "./catalog.js";
 
 /**
  * Bakkar Inventory API
@@ -524,28 +525,6 @@ async function getSession(request, env) {
   `).bind(tokenHash).first();
   return session || null;
 }
-async function handleCatalog(url, env) {
-  const rawLimit = Number(url.searchParams.get("limit") || 24);
-  const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 50) : 24;
-  const cursor = url.searchParams.get("cursor");
-  const search = (url.searchParams.get("q") || "").trim().slice(0, 80);
-  const pattern = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
-  const result = await env.DB.prepare(`
-    SELECT pc.product_id AS id, MAX(pc.part_name_ar) AS name, MAX(pc.part_name_en) AS name_en,
-      MAX(pc.condition) AS condition, MAX(pc.part_code) AS part_code,
-      MAX(pc.sale_price_piasters) AS sale_price_piasters, MAX(pc.category_name_ar) AS category,
-      json_group_array(json_object('brand_ar',pc.vehicle_brand_ar,'brand_en',pc.vehicle_brand_en,
-        'model',pc.vehicle_model,'year_from',pc.year_from,'year_to',pc.year_to)) AS fitments
-    FROM public_catalog pc
-    WHERE (? = '' OR pc.part_name_ar LIKE ? ESCAPE '\\' OR COALESCE(pc.part_code,'') LIKE ? ESCAPE '\\'
-      OR pc.vehicle_model LIKE ? ESCAPE '\\' OR pc.vehicle_brand_ar LIKE ? ESCAPE '\\')
-      AND (? IS NULL OR pc.product_id > ?)
-    GROUP BY pc.product_id ORDER BY pc.product_id ASC LIMIT ?
-  `).bind(search, pattern, pattern, pattern, pattern, cursor, cursor, limit + 1).all();
-  const rows = result.results || [], hasMore = rows.length > limit;
-  const page = rows.slice(0, limit).map(row => ({ ...row, fitments: JSON.parse(row.fitments || "[]") }));
-  return json({ data: page, pagination: { limit, has_more: hasMore, next_cursor: hasMore ? page[page.length - 1]?.id ?? null : null } });
-}
 async function handleAdmin(request, url, env) {
   const path = url.pathname;
   if (path === "/api/admin/status" && request.method === "GET") {
@@ -802,7 +781,12 @@ export default {
         return json({ status: check?.ok === 1 ? "ok" : "degraded", service: "bakkar-inventory-api" }, 200, cors);
       }
       if (url.pathname === "/api/catalog" && request.method === "GET") {
-        const response = await handleCatalog(url, env);
+        const response = await handlePublicCatalog(url, env);
+        for (const [key,value] of Object.entries(cors)) response.headers.set(key,value);
+        return response;
+      }
+      if (url.pathname === "/api/catalog/meta" && request.method === "GET") {
+        const response = await handlePublicCatalogMeta(env);
         for (const [key,value] of Object.entries(cors)) response.headers.set(key,value);
         return response;
       }
