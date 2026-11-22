@@ -215,7 +215,7 @@ function renderImportRows(rows,batch){
    (f.year_from??null)===(item.year_from??null)&&(f.year_to??null)===(item.year_to??null)
   );
   const exactSuggestion=exactCandidate&&normalizeMatchText(exactCandidate.part_name_ar)===normalizeMatchText(item.part_name_ar)&&
-   normalizeMatchText(exactCandidate.condition)===normalizeMatchText(item.condition)&&codeConsistent&&fitmentConsistent
+   (!item.condition||!exactCandidate.condition||normalizeMatchText(exactCandidate.condition)===normalizeMatchText(item.condition))&&codeConsistent&&fitmentConsistent
    ?"match:"+exactCandidate.id:"";
   const choices=locked?'<option value="skip">تخطي هذا الصف</option>':
    '<option value="">اختر قرارًا لهذا الصف</option><option value="create">إنشاء قطعة جديدة</option>'+
