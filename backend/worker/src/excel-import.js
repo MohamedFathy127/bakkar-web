@@ -4,6 +4,7 @@ const JSON_HEADERS = {
   "x-content-type-options": "nosniff",
 };
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_REQUEST_BYTES = 15 * 1024 * 1024;
 const MAX_ROWS = 500;
 const HEADERS = [
   "الماركة", "اسم القطعة", "موديل السيارة", "من سنة", "إلى سنة",
@@ -313,7 +314,7 @@ async function handleExcelImport(request, url, env, session) {
     if (!origin || origin !== new URL(request.url).origin || (fetchSite && fetchSite !== "same-origin")) {
       return reply({ error: "Invalid request origin." }, 403);
     }
-    const parsed = await readJsonBody(request, MAX_FILE_BYTES + 64 * 1024);
+    const parsed = await readJsonBody(request, MAX_REQUEST_BYTES);
     if (parsed.error) return reply({ error: parsed.error }, 400);
     const filename = String(parsed.body.filename || "inventory.xlsx").slice(-120);
     const sheetRows = parsed.body.rows;
@@ -329,14 +330,17 @@ async function handleExcelImport(request, url, env, session) {
     const extraHeaders = actualHeaders.slice(HEADERS.length).some(value => value !== "");
     const extraData = sheetRows.slice(1).some(row => (row || []).slice(HEADERS.length).some(value => textValue(value) !== null));
     if (missing.length || extraHeaders || extraData) return reply({ error: "عناوين الأعمدة أو بياناتها لا تطابق قالب بكار المكوّن من 12 عمودًا.", expected_headers: HEADERS, actual_headers: sheetRows[0] || [] }, 400);
-    const rows = await parseRows(env.DB, sheetRows);
-    if (!rows.length) return reply({ error: "لم يتم العثور على صفوف بيانات." }, 400);
-    // Hash worksheet data rather than workbook metadata, so identical inventory
-    // rows cannot be staged twice under a different filename or formatting.
+    // Hash and reject duplicate batches before running product-candidate lookups.
     const canonicalRows = sheetRows.map(row => row.map(cell =>
       typeof cell === "string" ? cell.normalize("NFKC").trim() : cell
     ));
     const hash = await sha256Hex(new TextEncoder().encode(JSON.stringify(canonicalRows)));
+    const existingBatch = await env.DB.prepare("SELECT id,status,filename FROM import_batches WHERE file_sha256=? LIMIT 1").bind(hash).first();
+    if (existingBatch) {
+      return reply({ error: "تم رفع هذا الملف من قبل. استخدم المعاينة الموجودة بدل إعادة استيراده.", existing_batch: existingBatch }, 409);
+    }
+    const rows = await parseRows(env.DB, sheetRows);
+    if (!rows.length) return reply({ error: "لم يتم العثور على صفوف بيانات." }, 400);
     const batchId = crypto.randomUUID();
     const now = new Date().toISOString();
     try {
