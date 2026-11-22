@@ -122,35 +122,31 @@ async function handleCatalog(url, env) {
 
   const result = await env.DB.prepare(`
     SELECT
-      p.id AS id,
-      p.part_name_ar AS name,
-      p.part_name_en AS name_en,
-      p.condition AS condition,
-      p.part_code AS part_code,
-      p.sale_price_piasters AS sale_price_piasters,
-      c.name_ar AS category,
+      pc.product_id AS id,
+      MAX(pc.part_name_ar) AS name,
+      MAX(pc.part_name_en) AS name_en,
+      MAX(pc.condition) AS condition,
+      MAX(pc.part_code) AS part_code,
+      MAX(pc.sale_price_piasters) AS sale_price_piasters,
+      MAX(pc.category_name_ar) AS category,
       json_group_array(json_object(
-        'brand_ar', b.name_ar,
-        'brand_en', b.name_en,
-        'model', f.model,
-        'year_from', f.year_from,
-        'year_to', f.year_to
+        'brand_ar', pc.vehicle_brand_ar,
+        'brand_en', pc.vehicle_brand_en,
+        'model', pc.vehicle_model,
+        'year_from', pc.year_from,
+        'year_to', pc.year_to
       )) AS fitments
-    FROM products p
-    JOIN product_fitments f ON f.product_id = p.id
-    JOIN brands b ON b.id = f.brand_id
-    LEFT JOIN categories c ON c.id = p.category_id
-    WHERE p.is_public = 1
-      AND p.archived_at IS NULL
-      AND f.compatibility_status = 'confirmed'
-      AND (? = '' OR p.part_name_ar LIKE ? ESCAPE '\\'
-        OR COALESCE(p.part_code, '') LIKE ? ESCAPE '\\'
-        OR f.model LIKE ? ESCAPE '\\')
-      AND (? IS NULL OR p.id > ?)
-    GROUP BY p.id
-    ORDER BY p.id ASC
+    FROM public_catalog pc
+    WHERE
+      (? = '' OR pc.part_name_ar LIKE ? ESCAPE '\\\\'
+        OR COALESCE(pc.part_code, '') LIKE ? ESCAPE '\\\\'
+        OR pc.vehicle_model LIKE ? ESCAPE '\\\\'
+        OR pc.vehicle_brand_ar LIKE ? ESCAPE '\\\\')
+      AND (? IS NULL OR pc.product_id > ?)
+    GROUP BY pc.product_id
+    ORDER BY pc.product_id ASC
     LIMIT ?
-  `).bind(search, pattern, pattern, pattern, cursor, cursor, limit + 1).all();
+  `).bind(search, pattern, pattern, pattern, pattern, cursor, cursor, limit + 1).all();
 
   const rows = result.results || [];
   const hasMore = rows.length > limit;
