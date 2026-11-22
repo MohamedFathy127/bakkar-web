@@ -203,15 +203,17 @@ function renderImportPreview(data){
  const box=$("importPreview");box.classList.remove("hidden");
  const rows=importRows.map(row=>{
   const item=row.item||{},candidates=row.candidates||[];
+  const pending=!row.status||row.status==="preview";
   const options=['<option value="">اختر قرار الصف</option>'];
   candidates.forEach(candidate=>options.push('<option value="match:'+escapeHtml(candidate.id)+'">مطابقة: '+escapeHtml(candidate.part_name_ar)+' — '+escapeHtml(candidate.condition||"الحالة غير محددة")+' — رصيد '+Number(candidate.total_quantity||0)+'</option>'));
   if(item.part_name_ar)options.push('<option value="create">إنشاء سجل جديد مستقل</option>');
   options.push('<option value="skip">تخطي هذا الصف</option>');
   const issues=(row.issues||[]).map(issue=>'<li>'+escapeHtml(issue)+'</li>').join("");
-  return '<tr><td>'+Number(row.row_number)+'</td><td>'+escapeHtml(item.part_name_ar||"اسم غير موجود")+'</td><td>'+escapeHtml(item.brand_raw||"—")+' / '+escapeHtml(item.model_raw||"—")+'</td><td>'+(item.quantity==null?"غير محددة":Number(item.quantity))+'</td><td>'+escapeHtml(item.location_raw||"—")+'</td><td><ul>'+issues+'</ul></td><td><select class="importDecision" data-row="'+Number(row.row_number)+'">'+options.join("")+'</select></td></tr>';
+  const decision=pending?'<select class="importDecision" data-row="'+Number(row.row_number)+'">'+options.join("")+'</select>':(row.status==="applied"?"تم اعتماده":"تم تخطيه");
+  return '<tr><td>'+Number(row.row_number)+'</td><td>'+escapeHtml(item.part_name_ar||"اسم غير موجود")+'</td><td>'+escapeHtml(item.brand_raw||"—")+' / '+escapeHtml(item.model_raw||"—")+'</td><td>'+(item.quantity==null?"غير محددة":Number(item.quantity))+'</td><td>'+escapeHtml(item.location_raw||"—")+'</td><td><ul>'+issues+'</ul></td><td>'+decision+'</td></tr>';
  }).join("");
  box.innerHTML='<strong>معاينة: '+escapeHtml(data.filename)+'</strong><p>عدد الصفوف: '+Number(data.total_rows)+' | صفوف بها تنبيهات: '+Number(data.warning_rows)+' | صفوف لها احتمالات تكرار: '+Number(data.duplicate_rows)+'</p><div style="overflow:auto"><table><thead><tr><th>صف</th><th>اسم القطعة</th><th>الماركة / الموديل</th><th>الكمية</th><th>المخزن</th><th>الملاحظات</th><th>قرارك</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">المطابقة لا تستبدل بيانات القطعة الموجودة. الكمية تُعامل كرصيد مستهدف للمخزن المحدد، وليس كمية تُضاف فوق الرصيد الحالي.</p>';
- $("applyImportBtn").classList.remove("hidden");
+ $("applyImportBtn").classList.toggle("hidden",!importRows.some(row=>!row.status||row.status==="preview"));
 }
 $("importForm").onsubmit=async e=>{
  e.preventDefault();const file=$("excelFile").files[0];if(!file){message("adminMsg","اختر ملف Excel أولًا.");return}
@@ -248,6 +250,12 @@ $("applyImportBtn").onclick=async()=>{
   const result=await api("/api/admin/imports/"+importBatchId+"/apply",{method:"POST",body:JSON.stringify({decisions})});
   message("adminMsg","نتيجة الاستيراد: قطع جديدة "+result.created+"، قطع مطابقة "+result.matched+"، صفوف متخطاة "+result.skipped+"، صفوف لم تُعتمد "+result.failed+". "+(result.complete?"تم اعتماد الدفعة بالكامل.":"ما زالت هناك صفوف معلقة؛ راجع الصفوف التي لم تُعتمد."));
   if(result.complete){$("applyImportBtn").classList.add("hidden");$("importPreview").classList.add("hidden");$("importForm").reset();importBatchId=null;importRows=[]}
+  else{
+   const saved=await api("/api/admin/imports/"+importBatchId);
+   renderImportPreview({batch_id:importBatchId,filename:saved.batch.filename,total_rows:saved.batch.total_rows,
+    warning_rows:saved.rows.filter(row=>(row.issues||[]).length).length,
+    duplicate_rows:saved.rows.filter(row=>(row.candidates||[]).length).length,rows:saved.rows});
+  }
   await loadAdmin();
  }catch(error){message("adminMsg",error.message)}
  finally{$("applyImportBtn").disabled=false}
