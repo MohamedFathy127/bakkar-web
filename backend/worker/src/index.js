@@ -196,9 +196,9 @@ async function handleAdmin(request, url, env) {
     if (withinWindow && attempt.attempts >= 5) return json({ error: "Too many attempts for this account. Try again in 15 minutes." }, 429);
     if (ipWithinWindow && ipAttempt.attempts >= 20) return json({ error: "Too many attempts from this network. Try again in 15 minutes." }, 429);
     await env.DB.batch([
-      env.DB.prepare("DELETE FROM login_attempts WHERE window_started_at < datetime('now','-1 day')"),
-      env.DB.prepare("DELETE FROM login_ip_attempts WHERE window_started_at < datetime('now','-1 day')"),
-      env.DB.prepare("DELETE FROM admin_sessions WHERE expires_at < datetime('now','-7 days')")
+      env.DB.prepare("DELETE FROM login_attempts WHERE window_started_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day')"),
+      env.DB.prepare("DELETE FROM login_ip_attempts WHERE window_started_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day')"),
+      env.DB.prepare("DELETE FROM admin_sessions WHERE expires_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days')")
     ]);
     const credential = await env.DB.prepare(`
       SELECT c.password_salt,c.password_hash,c.iterations,a.email
@@ -212,8 +212,8 @@ async function handleAdmin(request, url, env) {
     if (!valid) {
       const now = new Date().toISOString();
       await env.DB.batch([
-        env.DB.prepare("INSERT INTO login_attempts(attempt_key,attempts,window_started_at,updated_at) VALUES(?,1,?,?) ON CONFLICT(attempt_key) DO UPDATE SET attempts=CASE WHEN login_attempts.window_started_at >= datetime('now','-15 minutes') THEN login_attempts.attempts+1 ELSE 1 END,window_started_at=CASE WHEN login_attempts.window_started_at >= datetime('now','-15 minutes') THEN login_attempts.window_started_at ELSE excluded.window_started_at END,updated_at=excluded.updated_at").bind(attemptKey,now,now),
-        env.DB.prepare("INSERT INTO login_ip_attempts(ip_hash,attempts,window_started_at,updated_at) VALUES(?,1,?,?) ON CONFLICT(ip_hash) DO UPDATE SET attempts=CASE WHEN login_ip_attempts.window_started_at >= datetime('now','-15 minutes') THEN login_ip_attempts.attempts+1 ELSE 1 END,window_started_at=CASE WHEN login_ip_attempts.window_started_at >= datetime('now','-15 minutes') THEN login_ip_attempts.window_started_at ELSE excluded.window_started_at END,updated_at=excluded.updated_at").bind(ipKey,now,now)
+        env.DB.prepare("INSERT INTO login_attempts(attempt_key,attempts,window_started_at,updated_at) VALUES(?,1,?,?) ON CONFLICT(attempt_key) DO UPDATE SET attempts=CASE WHEN login_attempts.window_started_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-15 minutes') THEN login_attempts.attempts+1 ELSE 1 END,window_started_at=CASE WHEN login_attempts.window_started_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-15 minutes') THEN login_attempts.window_started_at ELSE excluded.window_started_at END,updated_at=excluded.updated_at").bind(attemptKey,now,now),
+        env.DB.prepare("INSERT INTO login_ip_attempts(ip_hash,attempts,window_started_at,updated_at) VALUES(?,1,?,?) ON CONFLICT(ip_hash) DO UPDATE SET attempts=CASE WHEN login_ip_attempts.window_started_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-15 minutes') THEN login_ip_attempts.attempts+1 ELSE 1 END,window_started_at=CASE WHEN login_ip_attempts.window_started_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-15 minutes') THEN login_ip_attempts.window_started_at ELSE excluded.window_started_at END,updated_at=excluded.updated_at").bind(ipKey,now,now)
       ]);
       return json({ error: "البريد الإلكتروني أو كلمة المرور غير صحيحة." }, 401);
     }
