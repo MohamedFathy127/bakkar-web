@@ -58,7 +58,7 @@ body{background:#f7f5f1}#dashboard{max-width:820px;margin:22px auto}
 #publicationPanel{border-color:#ded5ca}#publicationPanel h3{margin:0;font-size:18px}
 #publicationSummary{background:#f7f4ef;color:#38332e}#publicationList table{min-width:720px}
 #publicationList button{white-space:nowrap}#publicationList td{vertical-align:top}
-#manualPublicationSection{margin-top:18px}
+#manualPublicationSection{margin-top:18px}#savedImportsList{display:grid;gap:8px;margin-top:12px}#savedImportsList button{text-align:right;white-space:normal}
 @media(max-width:640px){#dashboard{margin:8px auto;padding:8px}#excelOnlySection>.panel{padding:14px}}
 </style></head><body><main>
 <header><div><div class="brand">بكار لقطع غيار السيارات</div><h1>مزامنة المخزون</h1><p>ارفع ملف Excel، راجع التغييرات، ثم اعتمدها بأمان.</p></div><button id="logout" class="secondary hidden">تسجيل الخروج</button></header>
@@ -93,7 +93,8 @@ body{background:#f7f5f1}#dashboard{max-width:820px;margin:22px auto}
 <p>الخطوة 1: ارفع ملف XLSX. الخطوة 2: راجع التحذيرات والصفوف المتشابهة. الخطوة 3: اعتمد بعد التأكد. لا يتم تعديل المخزون أثناء المعاينة.</p>
 <input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
 <button id="previewExcelBtn" type="button">رفع الملف ومعاينة الصفوف</button>
-<button id="resumeExcelBtn" type="button" class="secondary">فتح معاينة سابقة</button>
+<button id="resumeExcelBtn" type="button" class="secondary">فتح معاينة محفوظة</button>
+<div id="savedImportsList" class="hidden"></div>
 <div id="excelImportMsg" class="notice hidden"></div>
 <div id="excelImportSummary"></div>
 <div id="excelImportRows"></div>
@@ -154,7 +155,7 @@ function clearProductEdit(){editingProductId=null;editingVersion=null;editingFit
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{"content-type":"application/json",...(opts.headers||{})},credentials:"same-origin"});const d=await r.json().catch(()=>({error:"استجابة غير مفهومة"}));if(!r.ok){const e=Error(d.error||"حدث خطأ");e.status=r.status;e.code=d.code;e.data=d;throw e}return d}
 function message(id,s){$(id).textContent=s;$(id).classList.remove("hidden")}
 function show(which){["login","setup","dashboard"].forEach(x=>$(x).classList.toggle("hidden",x!==which));$("logout").classList.toggle("hidden",which!=="dashboard")}
-async function refresh(){let d;try{d=await api("/api/admin/me")}catch(e){show("login");message("loginMsg","تعذر التحقق من جلسة الدخول: "+e.message);return false}$("who").textContent=d.user.email;show("dashboard");try{await loadAdmin();return true}catch(e){message("adminMsg","تم تسجيل الدخول بنجاح، لكن تعذر تحميل بيانات لوحة الإدارة: "+e.message+" — أعد تحميل الصفحة أو حاول لاحقًا.");return false}}
+async function refresh(){let d;try{d=await api("/api/admin/me")}catch(e){show("login");message("loginMsg","تعذر التحقق من جلسة الدخول: "+e.message);return false}$("who").textContent=d.user.email;show("dashboard");try{await loadAdmin();return true}catch(e){message("publicationMsg","تعذر تحميل حالة المنتجات: "+e.message+" — أعد تحميل الصفحة أو حاول لاحقًا.");return false}}
 async function openExistingProductForReview(id){
  try{
   const result=await api("/api/admin/products/"+id);const p=result.data;
@@ -316,8 +317,14 @@ $("previewExcelBtn").onclick=async()=>{
  }finally{$("previewExcelBtn").disabled=false}
 };
 $("resumeExcelBtn").onclick=async()=>{
- const id=prompt("أدخل رقم دفعة المعاينة المحفوظة:");if(!id)return;
- try{await loadImportBatch(id.trim())}catch(e){importMessage(e.message)}
+ try{
+  const result=await api("/api/admin/imports/recent");
+  const list=$("savedImportsList");
+  if(!result.data?.length){list.textContent="لا توجد معاينات محفوظة.";list.classList.remove("hidden");return}
+  list.classList.remove("hidden");
+  list.innerHTML='<p class="muted">اختر ملفًا لفتح مراجعته:</p>'+result.data.map(x=>'<button type="button" class="secondary saved-import-btn" data-id="'+escapeHtml(x.id)+'">'+escapeHtml(x.filename)+' — '+escapeHtml(x.status)+' — '+Number(x.total_rows).toLocaleString("ar-EG")+' صف — '+new Date(x.created_at).toLocaleString("ar-EG")+'</button>').join("");
+  document.querySelectorAll(".saved-import-btn").forEach(btn=>btn.onclick=async()=>{try{await loadImportBatch(btn.dataset.id);list.classList.add("hidden")}catch(e){importMessage(e.message)}});
+ }catch(e){importMessage(e.message)}
 };
 $("applyExcelBtn").onclick=async()=>{
  try{

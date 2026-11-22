@@ -177,3 +177,10 @@ test("maps reordered Excel columns by exact normalized headers and rejects dupli
  assert.equal(mapped.mapping[0],11);assert.equal(mapped.mapping[1],10);assert.equal(mapped.mapping[11],0);
  assert.equal(mapExcelHeaders([...headers,"اسم القطعة"]).duplicate,true);assert.equal(mapExcelHeaders(headers.slice(1)).missing,true);
 });
+
+test("header mapper is the same deterministic mapping used by preview validation", () => {
+ const input=["ملاحظات","كود القطعة","مكان التخزين","الحالة","سعر الشراء (ج.م)","سعر البيع (ج.م)","الكمية","إلى سنة","من سنة","موديل السيارة","اسم القطعة","الماركة"];
+ const result=mapExcelHeaders(input);
+ assert.deepEqual(result.mapping,[11,10,9,8,7,6,5,4,3,2,1,0]);
+ assert.equal(result.missing,false);assert.equal(result.duplicate,false);
+});

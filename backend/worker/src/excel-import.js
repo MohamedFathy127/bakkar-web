@@ -327,6 +327,16 @@ function mapExcelHeaders(inputHeaders) {
 async function handleExcelImport(request, url, env, session) {
   const path = url.pathname;
   const method = request.method;
+  if (path === "/api/admin/imports/recent" && method === "GET") {
+    const result = await env.DB.prepare(`
+      SELECT id,filename,status,total_rows,created_at
+      FROM import_batches
+      ORDER BY created_at DESC,id DESC
+      LIMIT 10
+    `).all();
+    return reply({ data: result.results || [] });
+  }
+
   if (path === "/api/admin/imports/preview" && method === "POST") {
     const origin = request.headers.get("Origin");
     const fetchSite = request.headers.get("Sec-Fetch-Site");
@@ -343,16 +353,12 @@ async function handleExcelImport(request, url, env, session) {
     if (sheetRows.some(row => !Array.isArray(row) || row.some(cell =>
       cell !== null && cell !== undefined && !["string", "number", "boolean"].includes(typeof cell)
     ))) return reply({ error: "بنية صفوف Excel غير صالحة. أعد حفظ الملف بصيغة XLSX وحاول مرة أخرى." }, 400);
-    const actualHeaders=(sheetRows[0]||[]).map(x=>normalize(x)),expectedHeaders=HEADERS.map(normalize),headerIndexes=[],usedIndexes=new Set();
-    const duplicateHeader=actualHeaders.some((value,index)=>value&&actualHeaders.indexOf(value)!==index);
-    for(const expected of expectedHeaders){
-      const matches=[];actualHeaders.forEach((value,index)=>{if(value===expected)matches.push(index)});
-      if(matches.length!==1||usedIndexes.has(matches[0]))return reply({error:"تعذر تحديد الأعمدة بشكل آمن. تأكد من وجود كل عنوان مرة واحدة فقط دون تغيير اسمه.",expected_headers:HEADERS,actual_headers:sheetRows[0]||[]},400);
-      headerIndexes.push(matches[0]);usedIndexes.add(matches[0]);
-    }
-    const extraIndexes=actualHeaders.map((_,index)=>index).filter(index=>!usedIndexes.has(index));
+    const headerMatch=mapExcelHeaders(sheetRows[0]||[]);
+    if(headerMatch.missing||headerMatch.duplicate)return reply({error:"تعذر تحديد الأعمدة بشكل آمن. تأكد من وجود كل عنوان مرة واحدة فقط دون تغيير اسمه.",expected_headers:HEADERS,actual_headers:sheetRows[0]||[]},400);
+    const headerIndexes=headerMatch.mapping,usedIndexes=new Set(headerIndexes);
+    const extraIndexes=(sheetRows[0]||[]).map((_,index)=>index).filter(index=>!usedIndexes.has(index));
     const extraData=sheetRows.slice(1).some(row=>extraIndexes.some(index=>textValue((row||[])[index])!==null));
-    if(duplicateHeader||extraData)return reply({error:"يوجد عنوان مكرر أو عمود إضافي يحتوي على بيانات. لم يتم تجاهله حتى لا تنتقل البيانات إلى عمود خاطئ.",expected_headers:HEADERS,actual_headers:sheetRows[0]||[]},400);
+    if(extraData)return reply({error:"يوجد عمود إضافي يحتوي على بيانات. لم يتم تجاهله حتى لا تنتقل البيانات إلى عمود خاطئ.",expected_headers:HEADERS,actual_headers:sheetRows[0]||[]},400);
     const normalizedSheetRows=[HEADERS,...sheetRows.slice(1).map(row=>headerIndexes.map(index=>(row||[])[index]??null))];
     // Hash and reject duplicate batches before running product-candidate lookups.
     const canonicalRows=normalizedSheetRows.map(row=>row.map(cell=>typeof cell==="string"?cell.normalize("NFKC").trim():cell));
