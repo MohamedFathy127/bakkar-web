@@ -104,3 +104,18 @@ Use synthetic test data locally. Do not point local development at production D1
 - Added `wrangler.test.jsonc` and explicit `dev:test` / `deploy:test` scripts so test commands target the isolated test D1 database, not the production database configured in `wrangler.jsonc`.
 - Added a GitHub Actions syntax check for both Worker modules.
 - Not yet verified: deployed runtime behavior for the new routes, atomic stock updates, concurrency behavior, or browser UI integration. Do not deploy to either Worker until syntax checks and test-environment validation are complete.
+
+
+## Staged Excel inventory import (feature/excel-import)
+
+- Owner-only `POST /api/admin/imports/preview` accepts a single `.xlsx` file (maximum 5 MiB, first worksheet, at most 500 data rows) using the agreed 12-column Arabic template:
+  `الماركة، اسم القطعة، موديل السيارة، من سنة، إلى سنة، الكمية، سعر البيع (ج.م)، سعر الشراء (ج.م)، الحالة، مكان التخزين، كود القطعة، ملاحظات`.
+- The upload is parsed with SheetJS 0.20.3 from the official SheetJS CDN. The parser is dynamically imported only when the owner opens an import, to reduce Worker startup cost.
+- The original row values and normalized fields are staged in `import_batches` and `import_batch_rows`; preview does not change products, stock balances, or movements.
+- The file's SHA-256 hash prevents creating a second batch from the exact same workbook. An existing preview can be resumed with `GET /api/admin/imports/:id`.
+- Each row requires an explicit owner decision: create a new product, match one of the detected existing products, or skip. Matching an existing product does not overwrite its name, code, condition, prices, fitments, or notes.
+- For a row with a valid location and quantity, the Excel quantity is treated as the target balance for that product/location. The import creates an append-only stock movement for the difference; it does not add the full quantity on every import. Re-importing an edited workbook therefore does not duplicate the same balance.
+- Blank prices remain SQL NULL; an explicit zero remains zero. Missing/invalid quantity remains unset and does not create a stock movement. Missing location does not create or adjust a balance. Unknown brands and locations, missing codes, placeholder model values, and duplicate candidates are surfaced as preview warnings.
+- Import-created products remain private (`is_public=0`) and vehicle fitments remain `pending`; public catalog visibility is never enabled by import.
+- Migration `0007_excel_import_staging.sql` adds staged row storage and must be applied to the isolated test D1 before testing these routes. Do not apply it to production without separate approval.
+- This feature is on `feature/excel-import` and is not deployed. Browser/runtime tests and the actual workbook validation remain outstanding.
