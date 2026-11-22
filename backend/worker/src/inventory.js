@@ -118,6 +118,53 @@ function validateProduct(input) {
   };
 }
 
+function normalizePartKey(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLocaleLowerCase("ar")
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/[ـ\s\-_/.,،؛:()[\]{}]+/g, "")
+    .trim();
+}
+
+async function findPossibleDuplicates(db, product) {
+  const rows = await db.prepare(`
+    SELECT p.id, p.part_name_ar, p.part_name_en, p.part_code, p.condition,
+      p.sale_price_piasters, p.purchase_price_piasters, p.version,
+      COALESCE(SUM(ib.quantity), 0) AS total_quantity
+    FROM products p
+    LEFT JOIN inventory_balances ib ON ib.product_id = p.id
+    WHERE p.archived_at IS NULL
+    GROUP BY p.id
+    ORDER BY p.updated_at DESC
+    LIMIT 500
+  `).all();
+  const nameKey = normalizePartKey(product.partName);
+  const codeKey = normalizePartKey(product.partCode);
+  const candidates = (rows.results || []).filter(row =>
+    (nameKey && normalizePartKey(row.part_name_ar) === nameKey) ||
+    (codeKey && normalizePartKey(row.part_code) === codeKey)
+  ).slice(0, 10);
+  if (!candidates.length) return [];
+  const ids = candidates.map(x => x.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const fitments = await db.prepare(`
+    SELECT f.product_id, f.brand_id, b.name_ar AS brand_name_ar, f.model,
+      f.year_from, f.year_to, f.compatibility_status
+    FROM product_fitments f JOIN brands b ON b.id=f.brand_id
+    WHERE f.product_id IN (${placeholders})
+    ORDER BY f.product_id, b.name_ar, f.model
+  `).bind(...ids).all();
+  const byProduct = new Map();
+  for (const f of fitments.results || []) {
+    if (!byProduct.has(f.product_id)) byProduct.set(f.product_id, []);
+    byProduct.get(f.product_id).push(f);
+  }
+  return candidates.map(x => ({ ...x, fitments: byProduct.get(x.id) || [] }));
+}
+
 async function referencesValid(db, product) {
   if (product.categoryId) {
     const category = await db.prepare("SELECT id FROM categories WHERE id=? AND active=1 LIMIT 1")
@@ -161,6 +208,15 @@ async function handleInventoryAdmin(request, url, env, session) {
   const path = url.pathname;
   const method = request.method;
 
+  if (path === "/api/admin/stock-balance" && method === "GET") {
+    const productId = url.searchParams.get("product_id") || "";
+    const locationId = url.searchParams.get("location_id") || "";
+    if (!productId || !locationId) return reply({ error: "اختر القطعة والمخزن." }, 400);
+    const row = await env.DB.prepare("SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?")
+      .bind(productId, locationId).first();
+    return reply({ quantity: Number(row?.quantity || 0) });
+  }
+
   if (path === "/api/admin/meta" && method === "GET") {
     const [brands, categories, locations] = await Promise.all([
       env.DB.prepare("SELECT id, name_ar, name_en, slug FROM brands ORDER BY name_ar").all(),
@@ -198,6 +254,16 @@ async function handleInventoryAdmin(request, url, env, session) {
     return reply({ data: { ...product, fitments: fitments.results || [], balances: balances.results || [] } });
   }
 
+  if (path === "/api/admin/products/duplicate-check" && method === "POST") {
+    if (!sameOrigin(request)) return reply({ error: "Invalid request origin." }, 403);
+    const parsed = await bodyJson(request);
+    if (parsed.error) return reply({ error: parsed.error }, 400);
+    const product = validateProduct(parsed.value);
+    if (!product) return reply({ error: "راجع بيانات القطعة قبل فحص التكرار." }, 400);
+    const candidates = await findPossibleDuplicates(env.DB, product);
+    return reply({ candidates });
+  }
+
   if (path === "/api/admin/products" && method === "POST") {
     if (!sameOrigin(request)) return reply({ error: "Invalid request origin." }, 403);
     const parsed = await bodyJson(request);
@@ -205,6 +271,15 @@ async function handleInventoryAdmin(request, url, env, session) {
     const product = validateProduct(parsed.value);
     if (!product) return reply({ error: "راجع بيانات القطعة والتوافق والأسعار." }, 400);
     if (!await referencesValid(env.DB, product)) return reply({ error: "الماركة أو التصنيف غير موجود، أو يوجد توافق مكرر." }, 400);
+    const possibleDuplicates = await findPossibleDuplicates(env.DB, product);
+    const confirmedIds = Array.isArray(parsed.value.duplicate_confirmed_ids)
+      ? parsed.value.duplicate_confirmed_ids.filter(x => typeof x === "string")
+      : [];
+    if (possibleDuplicates.length &&
+        (parsed.value.duplicate_decision !== "different" ||
+         possibleDuplicates.some(x => !confirmedIds.includes(x.id)))) {
+      return reply({ code: "possible_duplicate", error: "وجدنا قطعًا محتملة بنفس الاسم أو الكود. راجعها قبل إنشاء سجل جديد.", candidates: possibleDuplicates }, 409);
+    }
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const statements = [
