@@ -134,7 +134,7 @@ function clearProductEdit(){editingProductId=null;editingVersion=null;editingFit
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{"content-type":"application/json",...(opts.headers||{})},credentials:"same-origin"});const d=await r.json().catch(()=>({error:"استجابة غير مفهومة"}));if(!r.ok){const e=Error(d.error||"حدث خطأ");e.status=r.status;e.code=d.code;e.data=d;throw e}return d}
 function message(id,s){$(id).textContent=s;$(id).classList.remove("hidden")}
 function show(which){["login","setup","dashboard"].forEach(x=>$(x).classList.toggle("hidden",x!==which));$("logout").classList.toggle("hidden",which!=="dashboard")}
-async function refresh(){try{const d=await api("/api/admin/me");$("who").textContent=d.user.email;show("dashboard");await loadAdmin()}catch(e){show("login")}}
+async function refresh(){let d;try{d=await api("/api/admin/me")}catch(e){show("login");message("loginMsg","تعذر التحقق من جلسة الدخول: "+e.message);return false}$("who").textContent=d.user.email;show("dashboard");try{await loadAdmin();return true}catch(e){message("adminMsg","تم تسجيل الدخول بنجاح، لكن تعذر تحميل بيانات لوحة الإدارة: "+e.message+" — أعد تحميل الصفحة أو حاول لاحقًا.");return false}}
 async function openExistingProductForReview(id){
  try{
   const result=await api("/api/admin/products/"+id);const p=result.data;
@@ -426,10 +426,10 @@ $("movementForm").onsubmit=async e=>{e.preventDefault();const q=Number($("moveme
  }catch(e){message("adminMsg",e.message);await refreshAvailableStock()}
 };
 function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-$("loginBtn").onclick=async()=>{try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});$("password").value="";await refresh()}catch(e){message("loginMsg",e.message)}};
+$("loginBtn").onclick=async()=>{const btn=$("loginBtn");const original=btn.textContent;btn.disabled=true;btn.textContent="جارٍ التحقق...";$("loginMsg").classList.add("hidden");try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});$("password").value="";await refresh()}catch(e){message("loginMsg",e.message||"تعذر الاتصال بخدمة تسجيل الدخول. تحقق من الاتصال ثم حاول مرة أخرى.")}finally{btn.disabled=false;btn.textContent=original}};
 $("setupBtn").onclick=async()=>{try{await api("/api/admin/setup",{method:"POST",body:JSON.stringify({email:$("setupEmail").value,setup_key:$("setupKey").value,password:$("setupPassword").value})});$("setupKey").value="";$("setupPassword").value="";await refresh()}catch(e){message("setupMsg",e.message)}};
 $("logout").onclick=async()=>{try{await api("/api/admin/logout",{method:"POST",body:"{}"})}finally{show("login")}};
-(async()=>{try{const s=await api("/api/admin/status");if(s.needs_setup)show("setup");else await refresh()}catch(e){show("login")}})();
+(async()=>{try{const s=await api("/api/admin/status");if(s.needs_setup)show("setup");else await refresh()}catch(e){show("login");message("loginMsg","تعذر الاتصال بخدمة الإدارة: "+e.message)}})();
 </script></main></body></html>`;
 
 function json(data, status = 200, extraHeaders = {}) {
