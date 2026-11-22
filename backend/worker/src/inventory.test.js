@@ -9,6 +9,9 @@ test("product validation accepts explicit zero prices and rejects public unconfi
   assert.equal(privateProduct.purchase, 0);
   assert.equal(privateProduct.isPublic, 0);
   assert.equal(validateProduct({ ...base, is_public: true, fitments: [] }), null);
+  const missingSale = { part_name_ar: "قطعة بدون سعر", sale_price_piasters: null, purchase_price_piasters: null };
+  assert.equal(validateProduct(missingSale).sale, null);
+  assert.equal(validateProduct({ ...missingSale, is_public: true, fitments: [{ brand_id: "brand-1", model: "Sportage", compatibility_status: "confirmed" }] }), null);
   assert.equal(validateProduct({
     ...base,
     is_public: true,
