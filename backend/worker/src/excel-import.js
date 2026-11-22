@@ -29,7 +29,8 @@ function textValue(value) {
 }
 function numberValue(value) {
   if (value === null || value === undefined || String(value).trim() === "") return null;
-  const parsed = Number(String(value).replace(/[,،]/g, "").replace(/ج\.?م|EGP/gi, "").trim());
+  const normalized = String(value).replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+  const parsed = Number(normalized.replace(/[,،]/g, "").replace(/جنيه|ج\\.?م|EGP|LE/gi, "").trim());
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 function moneyPiasters(value) {
@@ -110,10 +111,17 @@ async function parseRows(db, rows) {
       notes: textValue(raw["ملاحظات"]),
     };
     if (!item.part_name_ar) issues.push("اسم القطعة غير موجود؛ لا يمكن إنشاء سجل بدون اسم.");
-    if (item.quantity === undefined) issues.push("الكمية ليست رقمًا صحيحًا غير سالب.");
-    if (item.sale_price_piasters === undefined) issues.push("سعر البيع غير صالح.");
-    if (item.purchase_price_piasters === undefined) issues.push("سعر الشراء غير صالح.");
-    if (item.year_from === undefined || item.year_to === undefined) issues.push("سنوات التوافق غير صالحة؛ راجعها يدويًا.");
+    if (item.quantity === undefined) { issues.push("الكمية غير صالحة؛ ستظل غير محددة ولن يتم تعديل الرصيد."); item.quantity = null; }
+    if (item.sale_price_piasters === undefined) { issues.push("سعر البيع غير صالح؛ سيظل فارغًا حتى مراجعته."); item.sale_price_piasters = null; }
+    if (item.purchase_price_piasters === undefined) { issues.push("سعر الشراء غير صالح؛ سيظل فارغًا حتى مراجعته."); item.purchase_price_piasters = null; }
+    if (item.year_from === undefined || item.year_to === undefined) {
+      issues.push("إحدى سنوات التوافق غير صالحة؛ تم ترك سنة التوافق فارغة.");
+      if (item.year_from === undefined) item.year_from = null;
+      if (item.year_to === undefined) item.year_to = null;
+    }
+    if (item.condition && item.condition.length > 40) { issues.push("الحالة أطول من الحد المسموح؛ تم ترك خانة الحالة فارغة."); item.condition = null; }
+    if (item.part_name_ar && item.part_name_ar.length > 160) issues.push("اسم القطعة أطول من الحد المسموح (160 حرفًا).");
+    if (item.notes && item.notes.length > 2000) { issues.push("الملاحظات أطول من الحد المسموح؛ حُفظ النص الأصلي في بيانات المعاينة فقط."); item.notes = null; }
     if (item.year_from !== null && item.year_to !== null && item.year_to < item.year_from) issues.push("سنة النهاية أقدم من سنة البداية.");
     if (item.condition && item.condition.length > 40) { issues.push("الحالة أطول من الحد المسموح؛ تم ترك خانة الحالة فارغة وحُفظ النص الأصلي في بيانات المعاينة."); item.condition = null; }
     if (item.part_name_ar && item.part_name_ar.length > 160) issues.push("اسم القطعة أطول من الحد المسموح (160 حرفًا).");
@@ -257,10 +265,7 @@ async function handleExcelImport(request, url, env, session) {
       }
       const item = JSON.parse(row.normalized_json);
       const issues = JSON.parse(row.issues_json);
-      if (!item.part_name_ar || item.part_name_ar.length > 160 || item.condition?.length > 40 ||
-          item.notes?.length > 2000 || item.sale_price_piasters === undefined ||
-          item.purchase_price_piasters === undefined || item.quantity === undefined ||
-          item.year_from === undefined || item.year_to === undefined ||
+      if (!item.part_name_ar || item.part_name_ar.length > 160 ||
           (item.year_from !== null && item.year_to !== null && item.year_to < item.year_from)) {
         failed++;
         continue;
