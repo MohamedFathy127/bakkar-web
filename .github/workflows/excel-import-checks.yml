@@ -28,5 +28,7 @@ jobs:
           node --check src/index.js
           node --check src/inventory.js
           node --check src/excel-import.js
+      - name: Run import edge-case tests
+        run: npm test
       - name: Bundle against isolated test Worker config
         run: npx wrangler deploy --dry-run --config wrangler.test.jsonc
