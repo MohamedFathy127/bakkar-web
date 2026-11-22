@@ -637,5 +637,5 @@ async function handleExcelImport(request, url, env, session) {
 
 export {
   handleExcelImport, normalize, textValue, numberValue, moneyPiasters,
-  integerValue, yearValue, rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned, findDuplicateMatchedTargets,
+  integerValue, yearValue, rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned, findDuplicateMatchedTargets, findCandidatesForItems,
 };
