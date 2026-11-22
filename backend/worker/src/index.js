@@ -233,7 +233,9 @@ $("previewExcelBtn").onclick=async()=>{
   const data=await api("/api/admin/imports/preview",{method:"POST",body:JSON.stringify({filename:file.name,rows})});
   currentImportBatchId=data.batch_id;
   renderImportRows(data.rows,{filename:data.filename,total_rows:data.total_rows,status:"preview"});
-  importMessage("تمت قراءة الملف وإنشاء المعاينة دون تعديل المنتجات أو الأرصدة. راجع التحذيرات واختر قرارًا لكل صف.");
+  importMessage(data.previous_import
+   ?"تنبيه: هذا الملف سبق استيراده بتاريخ "+new Date(data.previous_import.created_at).toLocaleString("ar-EG")+". تمت مقارنة محتواه وإنشاء معاينة مزامنة جديدة؛ راجع الفروق قبل الاعتماد."
+   :"تمت قراءة الملف وإنشاء المعاينة دون تعديل المنتجات أو الأرصدة. راجع التحذيرات واختر قرارًا لكل صف.");
  }catch(e){
   if(e.data?.existing_batch?.id){try{await loadImportBatch(e.data.existing_batch.id);importMessage(e.message+" تم فتح المعاينة السابقة.");}catch(inner){importMessage(inner.message)}}else importMessage(e.message)
  }finally{$("previewExcelBtn").disabled=false}
