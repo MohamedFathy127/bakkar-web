@@ -308,6 +308,7 @@ async function loadAdmin(){
   ["القطع المنشورة",fmtNumber(o.public_products),"ظاهرة في الكتالوج العام"],
   ["توافقات تحتاج مراجعة",fmtNumber(o.with_pending_fitment),"لا تُنشر قبل التأكيد"],
   ["قيمة الشراء التقديرية",fmtMoney(s.estimated_purchase_value_piasters),"حسب سعر الشراء المسجل"],
+  ["قيمة البيع التقديرية",fmtMoney(s.estimated_sale_value_piasters),"لو تم بيع الكميات الحالية"],
   ["قطع بدون كود",fmtNumber(o.missing_codes),"تحتاج استكمالًا عند توفر الكود"],
  ];
  $("analyticsCards").innerHTML=metrics.map((x,i)=>'<div class="metric"><span>'+x[0]+'</span><strong>'+x[1]+'</strong><small>'+x[2]+'</small></div>').join("");
@@ -322,7 +323,7 @@ async function loadAdmin(){
  $("analyticsBrands").innerHTML=renderBars(a.by_brand||[],"name_ar","product_count");
  const movementNames={in:"إضافة",out:"صرف",adjustment:"تسوية",transfer_in:"تحويل وارد",transfer_out:"تحويل صادر"};
  $("analyticsMovements").innerHTML=(a.movements_30d||[]).length?'<table><thead><tr><th>نوع الحركة</th><th>عدد العمليات</th><th>الوحدات</th></tr></thead><tbody>'+(a.movements_30d||[]).map(x=>'<tr><td>'+escapeHtml(movementNames[x.movement_type]||x.movement_type)+'</td><td>'+fmtNumber(x.movement_count)+'</td><td>'+fmtNumber(x.units)+'</td></tr>').join("")+'</tbody></table>':'<p class="muted">لا توجد حركات خلال آخر 30 يومًا.</p>';
- $("analyticsQuality").innerHTML='<p>بدون سعر بيع: <strong>'+fmtNumber(o.missing_sale_prices)+'</strong></p><p>بدون سعر شراء: <strong>'+fmtNumber(o.missing_purchase_prices)+'</strong></p><p>بدون توافق سيارة: <strong>'+fmtNumber(o.without_fitment)+'</strong></p><p>أرصدة بدون سعر شراء: <strong>'+fmtNumber(s.balances_without_purchase_price)+'</strong></p>';
+ $("analyticsQuality").innerHTML='<p>بدون سعر بيع: <strong>'+fmtNumber(o.missing_sale_prices)+'</strong></p><p>بدون سعر شراء: <strong>'+fmtNumber(o.missing_purchase_prices)+'</strong></p><p>سعر الشراء أعلى من البيع: <strong>'+fmtNumber(o.purchase_exceeds_sale)+'</strong></p><p>بدون توافق سيارة: <strong>'+fmtNumber(o.without_fitment)+'</strong></p><p>أرصدة بدون سعر شراء: <strong>'+fmtNumber(s.balances_without_purchase_price)+'</strong></p>';
  $("analyticsImports").innerHTML=(a.recent_imports||[]).length?'<table><thead><tr><th>الملف</th><th>الحالة</th><th>صفوف</th><th>إنشاء</th><th>تحديث</th><th>تخطي</th><th>أخطاء</th></tr></thead><tbody>'+(a.recent_imports||[]).map(x=>'<tr><td>'+escapeHtml(x.filename)+'</td><td>'+escapeHtml(x.status)+'</td><td>'+fmtNumber(x.total_rows)+'</td><td>'+fmtNumber(x.created_count)+'</td><td>'+fmtNumber(x.updated_count)+'</td><td>'+fmtNumber(x.skipped_count)+'</td><td>'+fmtNumber(x.error_count)+'</td></tr>').join("")+'</tbody></table>':'<p class="muted">لا توجد عمليات استيراد محفوظة.</p>';
  $("brandId").innerHTML='<option value="">اختر الماركة</option>'+m.brands.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name_ar)+'</option>').join("");
  $("movementProduct").innerHTML='<option value="">اختر القطعة</option>'+p.data.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.part_name_ar)+' — '+escapeHtml(x.condition||"الحالة غير محددة")+' — رصيد إجمالي: '+Number(x.total_quantity||0)+' — #'+escapeHtml(x.id.slice(0,8))+'</option>').join("");
@@ -628,6 +629,7 @@ async function handleAdmin(request, url, env) {
           SUM(CASE WHEN part_code IS NULL OR trim(part_code)='' THEN 1 ELSE 0 END) AS missing_codes,
           SUM(CASE WHEN sale_price_piasters IS NULL THEN 1 ELSE 0 END) AS missing_sale_prices,
           SUM(CASE WHEN purchase_price_piasters IS NULL THEN 1 ELSE 0 END) AS missing_purchase_prices,
+          SUM(CASE WHEN purchase_price_piasters IS NOT NULL AND sale_price_piasters IS NOT NULL AND purchase_price_piasters>sale_price_piasters THEN 1 ELSE 0 END) AS purchase_exceeds_sale,
           SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM product_fitments f WHERE f.product_id=p.id) THEN 1 ELSE 0 END) AS without_fitment,
           SUM(CASE WHEN EXISTS (SELECT 1 FROM product_fitments f WHERE f.product_id=p.id AND f.compatibility_status='pending') THEN 1 ELSE 0 END) AS with_pending_fitment
         FROM products p WHERE archived_at IS NULL
