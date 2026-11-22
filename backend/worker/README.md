@@ -10,7 +10,7 @@ A separate Cloudflare Worker API for the Bakkar inventory system.
 - The public catalog reads only from the `public_catalog` projection's underlying approved fields. It never returns purchase prices, internal notes, exact stock balances or staff records.
 - Admin endpoints fail closed. They require a valid Cloudflare Access JWT and an active email in `staff_accounts`.
 
-## Current routes
+## Deployment status\n\nThe Worker is deployed separately from Pages and is available at:\n\n- `https://bakkar-inventory-api.mohamedfathy12127.workers.dev`\n- Health: `/api/health`\n- Public catalog: `/api/catalog`\n\nThe `workers.dev` endpoint is enabled for API testing. It does not change the existing Pages website or its production branch.\n\n## Current routes
 
 | Method | Route | Access | Purpose |
 | --- | --- | --- | --- |
