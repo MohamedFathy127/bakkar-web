@@ -363,14 +363,14 @@ async function revealManualPublication(){$("manualPublicationSection").classList
 async function changePublication(productId,action){
  const data=await api("/api/admin/products/publication-status"),product=(data.data||[]).find(p=>p.id===productId);
  if(!product){message("publicationMsg","القطعة لم تعد موجودة. حدّث القائمة.");return}
- const promptText=action==="hide"?"هل تريد إخفاء هذه القطعة من الموقع؟":action==="confirm_and_publish"?"هل راجعت توافق السيارة التالي وتؤكد صحته؟\n\n"+(product.fitments||[]).map(f=>[f.brand_name_ar,f.model,f.year_from||"؟",f.year_to||"؟"].join(" / ")).join("\n")+"\n\nسيتم تأكيد كل توافقات هذه القطعة ونشرها.":"هل تريد نشر "+product.part_name_ar+" في الموقع؟";
+ const promptText=action==="hide"?"هل تريد إخفاء هذه القطعة من الموقع؟":action==="confirm_and_publish"?"هل راجعت توافق السيارة التالي وتؤكد صحته؟\\n\\n"+(product.fitments||[]).map(f=>[f.brand_name_ar,f.model,f.year_from||"؟",f.year_to||"؟"].join(" / ")).join("\\n")+"\\n\\nسيتم تأكيد كل توافقات هذه القطعة ونشرها.":"هل تريد نشر "+product.part_name_ar+" في الموقع؟";
  if(!confirm(promptText))return;
  try{await api("/api/admin/products/publication",{method:"POST",body:JSON.stringify({product_id:productId,action})});message("publicationMsg",action==="hide"?"تم إخفاء المنتج.":"تم نشر المنتج بنجاح.");await loadAdmin();}catch(e){message("publicationMsg",e.message)}
 }
 $("publishAllBtn").onclick=async()=>{
  const data=await api("/api/admin/products/publication-status"),eligible=(data.data||[]).filter(p=>!p.is_public&&p.publication_state==="eligible");
  if(!eligible.length){message("publicationMsg","لا توجد منتجات مستوفية لشروط النشر حاليًا. راجع قائمة النشر اليدوي.");await revealManualPublication();return}
- if(!confirm("هل تريد نشر "+(data.truncated?"المنتجات المؤهلة المعروضة وعددها ":"كل المنتجات المؤهلة وعددها ")+eligible.length+"؟\n\nلن يتم نشر أي قطعة بدون سعر بيع أو بدون توافق سيارة مؤكد. لن تتغير الأسعار أو الكميات.")){await revealManualPublication();return}
+ if(!confirm("هل تريد نشر "+(data.truncated?"المنتجات المؤهلة المعروضة وعددها ":"كل المنتجات المؤهلة وعددها ")+eligible.length+"؟\\n\\nلن يتم نشر أي قطعة بدون سعر بيع أو بدون توافق سيارة مؤكد. لن تتغير الأسعار أو الكميات.")){await revealManualPublication();return}
  try{$("publishAllBtn").disabled=true;const applied=await api("/api/admin/products/publication",{method:"POST",body:JSON.stringify({scope:"eligible"})});message("publicationMsg","تم نشر "+Number(applied.published||0)+" منتج. لم يتم نشر "+Number(applied.skipped||0)+" منتج لأنه لم يعد مستوفيًا للشروط أو تم تعديله بالتزامن."+(applied.more_eligible?" توجد منتجات مؤهلة أخرى؛ اضغط الزر مرة ثانية لاستكمالها.":""));await loadAdmin();}
  catch(e){message("publicationMsg",e.message)}finally{$("publishAllBtn").disabled=false}
 };
