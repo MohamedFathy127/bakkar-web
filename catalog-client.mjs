@@ -13,7 +13,6 @@ export function mapCatalogProduct(row) {
     })).filter(item => item.brand && item.model)
     : [];
   const primary = fitments[0] || {};
-  const pricePiasters = row?.sale_price_piasters == null ? null : Number(row.sale_price_piasters);
 
   return {
     id: text(row?.id),
@@ -27,7 +26,6 @@ export function mapCatalogProduct(row) {
     y2: primary.yearTo,
     cat: text(row?.category),
     cond: text(row?.condition),
-    price: pricePiasters == null || !Number.isSafeInteger(pricePiasters) ? null : pricePiasters / 100,
     inStock: row?.in_stock === true || row?.in_stock === 1,
     fitments,
     ok: fitments.length > 0,
