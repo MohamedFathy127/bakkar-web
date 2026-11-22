@@ -114,7 +114,7 @@ function parseCandidate(row) {
 }
 const CANDIDATE_SQL = `
   SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-    p.sale_price_piasters, p.purchase_price_piasters,
+    p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version,
     COALESCE((SELECT SUM(ib.quantity) FROM inventory_balances ib WHERE ib.product_id=p.id),0) AS total_quantity,
     COALESCE((
       SELECT json_group_array(json_object(
@@ -177,6 +177,19 @@ function otherLocationsMentioned(notes, locations, selectedLocationId) {
     return (full.length >= 4 && noteKey.includes(full)) || (short.length >= 3 && noteKey.includes(short));
   });
 }
+function buildMatchedProductUpdate(existing, item) {
+  // The inventory workbook is the source of truth for non-empty fields.
+  // Empty cells never erase website data; numeric zero remains an explicit value.
+  return {
+    part_name_ar: item.part_name_ar || existing.part_name_ar,
+    condition: item.condition ?? existing.condition,
+    part_code: item.part_code ?? existing.part_code,
+    sale_price_piasters: item.sale_price_piasters ?? existing.sale_price_piasters,
+    purchase_price_piasters: item.purchase_price_piasters ?? existing.purchase_price_piasters,
+    internal_notes: item.notes ?? existing.internal_notes,
+  };
+}
+
 function rowFingerprint(item) {
   return JSON.stringify([
     normalize(item.brand_raw), normalize(item.part_name_ar), normalize(item.model_raw),
@@ -203,7 +216,7 @@ async function parseRows(db, rows) {
     db.prepare("SELECT id,name,active FROM locations").all(),
     db.prepare(`
       SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-        p.sale_price_piasters, p.purchase_price_piasters,
+        p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version,
         COALESCE(SUM(ib.quantity),0) AS total_quantity,
         COALESCE((
           SELECT json_group_array(json_object(
@@ -335,18 +348,19 @@ async function handleExcelImport(request, url, env, session) {
       typeof cell === "string" ? cell.normalize("NFKC").trim() : cell
     ));
     const hash = await sha256Hex(new TextEncoder().encode(JSON.stringify(canonicalRows)));
-    const existingBatch = await env.DB.prepare("SELECT id,status,filename FROM import_batches WHERE file_sha256=? LIMIT 1").bind(hash).first();
-    if (existingBatch) {
-      return reply({ error: "تم رفع هذا الملف من قبل. استخدم المعاينة الموجودة بدل إعادة استيراده.", existing_batch: existingBatch }, 409);
+    const existingBatch = await env.DB.prepare("SELECT id,status,filename,created_at FROM import_batches WHERE content_sha256=? ORDER BY created_at DESC LIMIT 1").bind(hash).first();
+    if (existingBatch?.status === "preview") {
+      return reply({ error: "يوجد بالفعل ملف مطابق بانتظار المراجعة. تم فتح المعاينة المحفوظة بدل إنشاء دفعة مكررة.", existing_batch: existingBatch }, 409);
     }
     const rows = await parseRows(env.DB, sheetRows);
     if (!rows.length) return reply({ error: "لم يتم العثور على صفوف بيانات." }, 400);
     const batchId = crypto.randomUUID();
+    const uniqueFileHash = hash + ":" + batchId;
     const now = new Date().toISOString();
     try {
       const statements = [
-        env.DB.prepare("INSERT INTO import_batches(id,filename,file_sha256,status,total_rows,created_by,created_at) VALUES(?,?,?,'preview',?,?,?)")
-          .bind(batchId, filename, hash, rows.length, session.email, now),
+        env.DB.prepare("INSERT INTO import_batches(id,filename,file_sha256,content_sha256,status,total_rows,created_by,created_at) VALUES(?,?,?,?,'preview',?,?,?)")
+          .bind(batchId, filename, uniqueFileHash, hash, rows.length, session.email, now),
         ...rows.map(row => env.DB.prepare(`
           INSERT INTO import_batch_rows(id,batch_id,row_number,raw_json,normalized_json,issues_json,status,created_at)
           VALUES(?,?,?,?,?,?,'preview',?)
@@ -355,17 +369,68 @@ async function handleExcelImport(request, url, env, session) {
       // One D1 transaction: a failed staging write leaves no half-created batch.
       await env.DB.batch(statements);
     } catch (error) {
-      const existing = await env.DB.prepare("SELECT id,status,filename FROM import_batches WHERE file_sha256=? LIMIT 1").bind(hash).first();
+      const existing = await env.DB.prepare("SELECT id,status,filename FROM import_batches WHERE content_sha256=? ORDER BY created_at DESC LIMIT 1").bind(hash).first();
       if (existing) return reply({ error: "تم رفع هذا الملف من قبل. استخدم المعاينة الموجودة بدل إعادة استيراده.", existing_batch: existing }, 409);
       console.error("excel_import_stage_failed", String(error?.message || error));
       return reply({ error: "تعذر حفظ معاينة الاستيراد." }, 500);
     }
     return reply({
       batch_id: batchId, filename, total_rows: rows.length,
+      previous_import: existingBatch ? { id: existingBatch.id, filename: existingBatch.filename, status: existingBatch.status, created_at: existingBatch.created_at } : null,
       warning_rows: rows.filter(r => r.issues.length).length,
       duplicate_rows: rows.filter(r => r.candidates.length).length,
       rows: rows.map(r => ({ row_number: r.row_number, item: r.item, issues: r.issues, candidates: r.candidates })),
     }, 201);
+  }
+
+  const rowEditMatch = path.match(/^\/api\/admin\/imports\/([0-9a-f-]{36})\/rows\/(\d+)$/i);
+  if (rowEditMatch && method === "PUT") {
+    const origin = request.headers.get("Origin");
+    const fetchSite = request.headers.get("Sec-Fetch-Site");
+    if (!origin || origin !== new URL(request.url).origin || (fetchSite && fetchSite !== "same-origin")) {
+      return reply({ error: "Invalid request origin." }, 403);
+    }
+    const parsed = await readJsonBody(request, 12 * 1024);
+    if (parsed.error) return reply({ error: parsed.error }, 400);
+    const values = parsed.body?.values;
+    if (!values || typeof values !== "object" || Array.isArray(values)) {
+      return reply({ error: "بيانات التعديل غير صالحة." }, 400);
+    }
+    const allowed = new Set(HEADERS);
+    if (Object.keys(values).some(key => !allowed.has(key))) {
+      return reply({ error: "يوجد حقل غير معروف في التعديل." }, 400);
+    }
+    for (const value of Object.values(values)) {
+      if (value !== null && value !== undefined && !["string","number","boolean"].includes(typeof value)) {
+        return reply({ error: "قيم التعديل يجب أن تكون نصوصًا أو أرقامًا بسيطة." }, 400);
+      }
+    }
+    const batchId = rowEditMatch[1];
+    const rowNumber = Number(rowEditMatch[2]);
+    const batch = await env.DB.prepare("SELECT id,status,apply_token,apply_lock_expires_at FROM import_batches WHERE id=?").bind(batchId).first();
+    if (!batch) return reply({ error: "دفعة الاستيراد غير موجودة." }, 404);
+    if (batch.status !== "preview") return reply({ error: "لا يمكن تعديل صف بعد اعتماد الدفعة." }, 409);
+    if (batch.apply_token && batch.apply_lock_expires_at && batch.apply_lock_expires_at > new Date().toISOString()) {
+      return reply({ error: "لا يمكن تعديل الصف أثناء تنفيذ دفعة الاستيراد." }, 409);
+    }
+    const existing = await env.DB.prepare("SELECT id,raw_json,status FROM import_batch_rows WHERE batch_id=? AND row_number=?")
+      .bind(batchId,rowNumber).first();
+    if (!existing) return reply({ error: "صف الاستيراد غير موجود." }, 404);
+    if (existing.status !== "preview") return reply({ error: "لا يمكن تعديل صف تم اعتماده أو تخطيه." }, 409);
+    const raw = JSON.parse(existing.raw_json);
+    for (const [key,value] of Object.entries(values)) raw[key] = value;
+    const parsedRows = await parseRows(env.DB,[HEADERS,HEADERS.map(header=>raw[header]??null)]);
+    if (!parsedRows.length) return reply({ error: "لا يمكن حفظ صف فارغ بالكامل." }, 400);
+    const updated = parsedRows[0];
+    updated.row_number = rowNumber;
+    await env.DB.prepare(`
+      UPDATE import_batch_rows SET raw_json=?,normalized_json=?,issues_json=?
+      WHERE id=? AND status='preview'
+    `).bind(JSON.stringify(raw),JSON.stringify(updated.item),JSON.stringify(updated.issues),existing.id).run();
+    return reply({
+      row_number: rowNumber, raw, item: updated.item,
+      issues: updated.issues, candidates: updated.candidates, status: "preview",
+    });
   }
 
   const batchMatch = path.match(/^\/api\/admin\/imports\/([0-9a-f-]{36})$/i);
@@ -378,7 +443,7 @@ async function handleExcelImport(request, url, env, session) {
         .bind(batch.id).all(),
       env.DB.prepare(`
         SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-          p.sale_price_piasters, p.purchase_price_piasters,
+          p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version,
           COALESCE(SUM(ib.quantity),0) AS total_quantity,
           COALESCE((
             SELECT json_group_array(json_object(
@@ -433,7 +498,7 @@ async function handleExcelImport(request, url, env, session) {
     const [productsResult] = await Promise.all([
       env.DB.prepare(`
         SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-          p.sale_price_piasters, p.purchase_price_piasters,
+          p.sale_price_piasters, p.purchase_price_piasters, p.internal_notes, p.version,
           COALESCE(SUM(ib.quantity),0) AS total_quantity,
           COALESCE((
             SELECT json_group_array(json_object(
@@ -530,7 +595,8 @@ async function handleExcelImport(request, url, env, session) {
       const item = JSON.parse(row.normalized_json);
       const action = choice === "create" ? "created" : "matched";
       const productId = action === "created" ? crypto.randomUUID() : choice.slice(6);
-      applyPlans.push({ row, item, action, productId });
+      const candidate = action === "matched" ? candidates.find(value => value.id === productId) : null;
+      applyPlans.push({ row, item, action, productId, candidate });
     }
 
     for (let offset = 0; offset < applyPlans.length; offset += 40) {
@@ -557,6 +623,37 @@ async function handleExcelImport(request, url, env, session) {
             `).bind(crypto.randomUUID(), productId, item.brand_id, item.model, item.year_from, item.year_to, now, now));
           }
         }
+        if (action === "matched") {
+          const existing = plan.candidate;
+          if (!existing) throw new Error("matched_product_candidate_missing");
+          const updated = buildMatchedProductUpdate(existing, item);
+          statements.push(env.DB.prepare(`
+            UPDATE products SET part_name_ar=?, condition=?, part_code=?,
+              sale_price_piasters=?, purchase_price_piasters=?, internal_notes=?,
+              version=version+1, updated_at=?
+            WHERE id=? AND version=?
+          `).bind(
+            updated.part_name_ar, updated.condition, updated.part_code,
+            updated.sale_price_piasters, updated.purchase_price_piasters,
+            updated.internal_notes, now, productId, existing.version
+          ));
+          if (item.brand_id && item.model) {
+            statements.push(env.DB.prepare(`
+              INSERT INTO product_fitments(id,product_id,brand_id,model,year_from,year_to,compatibility_status,created_at,updated_at)
+              SELECT ?,?,?,?,?,?,'pending',?,?
+              WHERE NOT EXISTS (
+                SELECT 1 FROM product_fitments
+                WHERE product_id=? AND brand_id=? AND lower(trim(model))=lower(trim(?))
+                  AND year_from IS ? AND year_to IS ?
+              )
+            `).bind(
+              crypto.randomUUID(), productId, item.brand_id, item.model,
+              item.year_from, item.year_to, now, now,
+              productId, item.brand_id, item.model, item.year_from, item.year_to
+            ));
+          }
+        }
+
         if (item.location_id && item.quantity !== null) {
           statements.push(env.DB.prepare(`
             INSERT INTO stock_movements
@@ -577,10 +674,19 @@ async function handleExcelImport(request, url, env, session) {
           ));
         }
         statements.push(env.DB.prepare(`
-          INSERT INTO audit_log(id,entity_type,entity_id,action,after_json,actor_email,created_at)
-          VALUES(?,?,?,?,?,?,?)
+          INSERT INTO audit_log(id,entity_type,entity_id,action,before_json,after_json,actor_email,created_at)
+          VALUES(?,?,?,?,?,?,?,?)
         `).bind(crypto.randomUUID(), "product", productId, "excel_import_" + action,
-          JSON.stringify({ batch_id: batchId, row_number: row.row_number, target_quantity: item.quantity, location_id: item.location_id }), session.email, now));
+          action === "matched" ? JSON.stringify(plan.candidate) : null,
+          JSON.stringify({
+            batch_id: batchId, row_number: row.row_number,
+            target_quantity: item.quantity, location_id: item.location_id,
+            product_fields: action === "matched" ? buildMatchedProductUpdate(plan.candidate, item) : {
+              part_name_ar: item.part_name_ar, condition: item.condition, part_code: item.part_code,
+              sale_price_piasters: item.sale_price_piasters,
+              purchase_price_piasters: item.purchase_price_piasters, internal_notes: item.notes
+            }
+          }), session.email, now));
         statements.push(env.DB.prepare("UPDATE import_batch_rows SET status='applied',applied_action=?,applied_product_id=?,applied_at=? WHERE id=? AND status='preview'")
           .bind(action, productId, now, row.id));
       }
@@ -642,4 +748,5 @@ async function handleExcelImport(request, url, env, session) {
 export {
   handleExcelImport, normalize, textValue, numberValue, moneyPiasters,
   integerValue, yearValue, rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned, findDuplicateMatchedTargets, findCandidatesForItems,
+  buildMatchedProductUpdate,
 };

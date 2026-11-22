@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   normalize, textValue, numberValue, moneyPiasters, integerValue, yearValue,
   rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned, findDuplicateMatchedTargets, findCandidatesForItems,
+  buildMatchedProductUpdate,
 } from "./excel-import.js";
 
 test("normalizes Arabic spelling, diacritics, tatweel and separators", () => {
@@ -117,4 +118,55 @@ test("candidate lookups are batched in groups of 40 and merge normalized recent 
   assert.equal(candidates.length, 86);
   assert.equal(candidates[0][0].id, "older-normalized-match");
   assert.equal(candidates[0][0].fitments[0].model, "Venue");
+});
+
+test("matched Excel rows update non-empty source fields while preserving blanks and explicit zero", () => {
+  const existing = {
+    part_name_ar: "فانوس قديم",
+    condition: "استيراد",
+    part_code: "OLD-1",
+    sale_price_piasters: 125000,
+    purchase_price_piasters: 80000,
+    internal_notes: "ملاحظة موجودة",
+  };
+  const updated = buildMatchedProductUpdate(existing, {
+    part_name_ar: "فانوس جديد",
+    condition: null,
+    part_code: null,
+    sale_price_piasters: 0,
+    purchase_price_piasters: null,
+    notes: null,
+  });
+  assert.deepEqual(updated, {
+    part_name_ar: "فانوس جديد",
+    condition: "استيراد",
+    part_code: "OLD-1",
+    sale_price_piasters: 0,
+    purchase_price_piasters: 80000,
+    internal_notes: "ملاحظة موجودة",
+  });
+});
+
+test("matched Excel rows replace only supplied notes and keep empty spreadsheet fields non-destructive", () => {
+  const existing = {
+    part_name_ar: "قطعة",
+    condition: "جديد",
+    part_code: "A-1",
+    sale_price_piasters: null,
+    purchase_price_piasters: null,
+    internal_notes: "ملاحظة قديمة",
+  };
+  const updated = buildMatchedProductUpdate(existing, {
+    part_name_ar: "قطعة",
+    condition: "استيراد",
+    part_code: "B-2",
+    sale_price_piasters: null,
+    purchase_price_piasters: 0,
+    notes: "ملاحظة من برنامج المخزن",
+  });
+  assert.equal(updated.condition, "استيراد");
+  assert.equal(updated.part_code, "B-2");
+  assert.equal(updated.purchase_price_piasters, 0);
+  assert.equal(updated.internal_notes, "ملاحظة من برنامج المخزن");
+  assert.equal(updated.sale_price_piasters, null);
 });
