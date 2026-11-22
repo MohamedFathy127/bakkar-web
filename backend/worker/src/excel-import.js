@@ -143,7 +143,10 @@ async function parseRows(db, rows) {
     if (item.part_code === null) issues.push("كود القطعة غير مسجل.");
     if (item.sale_price_piasters === null) issues.push("سعر البيع غير مسجل؛ سيظل فارغًا وليس صفرًا.");
     if (item.purchase_price_piasters === null) issues.push("سعر الشراء غير مسجل؛ سيظل فارغًا وليس صفرًا.");
-    const candidates = await findCandidates(db, item);
+    const candidates = await findCandidates(db, item, cachedProducts);
+    const rowFingerprint = normalize(item.part_code || item.part_name_ar) + "|" + normalize(item.location_raw);
+    if (rowFingerprint !== "|" && seenRows.has(rowFingerprint)) issues.push("يوجد صف آخر لنفس القطعة وفي نفس المخزن داخل الملف؛ راجع الصفين لتجنب استبدال الرصيد.");
+    if (rowFingerprint !== "|") seenRows.add(rowFingerprint);
     if (candidates.length) issues.push("احتمال تكرار: راجع السجلات الموجودة واختر المطابقة أو إنشاء سجل مستقل.");
     output.push({ row_number: index + 1, raw, item, issues, candidates });
   }
@@ -225,10 +228,15 @@ async function handleExcelImport(request, url, env, session) {
     if (!batch) return reply({ error: "دفعة الاستيراد غير موجودة." }, 404);
     const rows = await env.DB.prepare("SELECT row_number,raw_json,normalized_json,issues_json,status,applied_product_id FROM import_batch_rows WHERE batch_id=? ORDER BY row_number")
       .bind(batch.id).all();
-    return reply({ batch, rows: (rows.results || []).map(r => ({
-      row_number: r.row_number, raw: JSON.parse(r.raw_json), item: JSON.parse(r.normalized_json),
-      issues: JSON.parse(r.issues_json), status: r.status, product_id: r.applied_product_id,
-    })) });
+    const mapped = await Promise.all((rows.results || []).map(async r => {
+      const item = JSON.parse(r.normalized_json);
+      return {
+        row_number: r.row_number, raw: JSON.parse(r.raw_json), item,
+        issues: JSON.parse(r.issues_json), status: r.status, product_id: r.applied_product_id,
+        candidates: r.status === "preview" ? await findCandidates(env.DB, item) : [],
+      };
+    }));
+    return reply({ batch, rows: mapped });
   }
 
   const applyMatch = path.match(/^\/api\/admin\/imports\/([0-9a-f-]{36})\/apply$/i);
