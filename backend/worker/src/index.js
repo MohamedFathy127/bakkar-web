@@ -106,8 +106,8 @@ async function openExistingProductForReview(id){
   $("salePrice").value=p.sale_price_piasters==null?"":(Number(p.sale_price_piasters)/100).toFixed(2);
   $("purchasePrice").value=p.purchase_price_piasters==null?"":(Number(p.purchase_price_piasters)/100).toFixed(2);
   const f=editingFitments[0];$("brandId").value=f?.brand_id||"";$("vehicleModel").value=f?.model||"";$("yearFrom").value=f?.year_from||"";$("yearTo").value=f?.year_to||"";$("fitmentStatus").value=f?.compatibility_status||"pending";$("isPublic").checked=Boolean(p.is_public);
-  $("saveProductBtn").textContent="حفظ التعديلات";$("cancelEditBtn").classList.remove("hidden");$("duplicateReview").classList.add("hidden");
-  message("adminMsg","تم فتح السجل الموجود. راجع بياناته وعدّل المطلوب قبل الحفظ؛ لم يتم دمج أو نقل أي مخزون تلقائيًا.");
+  $("saveProductBtn").textContent="حفظ التعديلات";$("cancelEditBtn").classList.remove("hidden");
+  message("adminMsg","تم فتح السجل الموجود. قارن بياناتك الجديدة بالتفاصيل المعروضة، ثم عدّل الحقول المطلوبة واحفظ. لم يتم دمج أو نقل أي مخزون تلقائيًا.");
   $("productForm").scrollIntoView({behavior:"smooth",block:"start"});
  }catch(e){message("adminMsg",e.message)}
 }
@@ -127,8 +127,10 @@ function showDuplicateReview(candidates,payload){
  $("duplicateReview").classList.remove("hidden");
  const money=v=>v==null?"غير محدد":(Number(v)/100).toFixed(2)+" جنيه";
  const fitments=p=>(p.fitments||[]).map(f=>[f.brand_name_ar,f.model,f.year_from||"؟",f.year_to||"؟"].join(" / ")).join("، ")||"لا يوجد توافق مسجل";
- $("duplicateReview").innerHTML='<h3>تنبيه: احتمال وجود قطعة مكررة</h3><p>وجدنا سجلات بنفس اسم القطعة أو كودها. راجع الاختلافات قبل إنشاء سجل جديد.</p>'+
- candidates.map(x=>'<div class="panel"><strong>'+escapeHtml(x.part_name_ar)+'</strong><p>الحالة: '+escapeHtml(x.condition||"غير محددة")+' | الكود: '+escapeHtml(x.part_code||"غير مسجل")+'</p><p>الرصيد الحالي: '+Number(x.total_quantity||0)+' قطعة</p><p>سعر البيع: '+money(x.sale_price_piasters)+' | الشراء: '+money(x.purchase_price_piasters)+'</p><p>توافق السيارات: '+escapeHtml(fitments(x))+'</p><button type="button" class="secondary sameProductBtn" data-id="'+escapeHtml(x.id)+'">نفس القطعة — افتح السجل للمراجعة</button></div>').join("")+
+ const proposedFitments=(payload.fitments||[]).map(f=>[f.brand_id,f.model,f.year_from||"؟",f.year_to||"؟",f.compatibility_status].join(" / ")).join("، ")||"لم يتم تحديد توافق";
+ $("duplicateReview").innerHTML='<h3>تنبيه: احتمال وجود قطعة مكررة</h3><p>وجدنا سجلات بنفس اسم القطعة أو كودها. راجع البيانات الجديدة مقابل كل سجل قبل اتخاذ القرار.</p>'+
+ '<div class="panel"><strong>البيانات الجديدة التي أدخلتها</strong><p>الاسم: '+escapeHtml(payload.part_name_ar)+'</p><p>الحالة: '+escapeHtml(payload.condition||"غير محددة")+' | الكود: '+escapeHtml(payload.part_code||"غير مسجل")+'</p><p>سعر البيع: '+money(payload.sale_price_piasters)+' | الشراء: '+money(payload.purchase_price_piasters)+'</p><p>التوافق: '+escapeHtml(proposedFitments)+'</p></div>'+
+ candidates.map(x=>'<div class="panel"><strong>السجل الموجود: '+escapeHtml(x.part_name_ar)+'</strong><p>الحالة: '+escapeHtml(x.condition||"غير محددة")+' | الكود: '+escapeHtml(x.part_code||"غير مسجل")+'</p><p>الرصيد الحالي: '+Number(x.total_quantity||0)+' قطعة</p><p>سعر البيع: '+money(x.sale_price_piasters)+' | الشراء: '+money(x.purchase_price_piasters)+'</p><p>توافق السيارات: '+escapeHtml(fitments(x))+'</p><button type="button" class="secondary sameProductBtn" data-id="'+escapeHtml(x.id)+'">نفس القطعة — افتح السجل للمراجعة</button></div>').join("")+
  '<p>لو كل النتائج دي قطع مختلفة فعلًا، أكد إنشاء سجل مستقل.</p><button type="button" id="confirmSeparateProduct">قطعة مختلفة — إنشاء سجل جديد</button>';
  document.querySelectorAll(".sameProductBtn").forEach(btn=>btn.onclick=()=>openExistingProductForReview(btn.dataset.id));
  $("confirmSeparateProduct").onclick=async()=>{
