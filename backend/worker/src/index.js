@@ -69,6 +69,25 @@ async function sha256(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return base64Url(new Uint8Array(digest));
 }
+async function safeStringEqual(left, right) {
+  const [a, b] = await Promise.all([sha256(String(left)), sha256(String(right))]);
+  return crypto.subtle.timingSafeEqual(decodeBase64(a), decodeBase64(b));
+}
+function safeHashEqual(left, right) {
+  const a = decodeBase64(left), b = decodeBase64(right);
+  return a.length === b.length && crypto.subtle.timingSafeEqual(a, b);
+}
+async function readJsonBody(request, maxBytes = 4096) {
+  const type = request.headers.get("Content-Type") || "";
+  if (!/^application\/json(?:\s*;|\s*$)/i.test(type)) return { error: "Content-Type must be application/json." };
+  if (Number(request.headers.get("Content-Length") || 0) > maxBytes) return { error: "Request body is too large." };
+  const raw = await request.text();
+  if (new TextEncoder().encode(raw).byteLength > maxBytes) return { error: "Request body is too large." };
+  try {
+    const body = JSON.parse(raw);
+    return body && typeof body === "object" && !Array.isArray(body) ? { body } : { error: "Invalid request body." };
+  } catch { return { error: "Invalid JSON body." }; }
+}
 function decodeBase64(value) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4);
@@ -89,7 +108,10 @@ function sessionCookie(value, maxAge) {
 }
 function requireSameOrigin(request, env) {
   const origin = request.headers.get("Origin");
-  return Boolean(origin && origin === new URL(request.url).origin && env.ALLOWED_ORIGIN);
+  const fetchSite = request.headers.get("Sec-Fetch-Site");
+  const type = request.headers.get("Content-Type") || "";
+  return Boolean(env.ALLOWED_ORIGIN && origin && origin === new URL(request.url).origin &&
+    (!fetchSite || fetchSite === "same-origin") && /^application\/json(?:\s*;|\s*$)/i.test(type));
 }
 async function getSession(request, env) {
   const token = cookieValue(request, "bakkar_admin_session");
@@ -136,11 +158,14 @@ async function handleAdmin(request, url, env) {
     if (!env.OWNER_EMAIL || !env.BOOTSTRAP_SECRET) return json({ error: "Owner setup is not configured. Set OWNER_EMAIL and BOOTSTRAP_SECRET first." }, 503);
     const existing = await env.DB.prepare("SELECT email FROM staff_accounts WHERE role='owner' LIMIT 1").first();
     if (existing) return json({ error: "Owner account has already been initialized." }, 409);
-    const body = await request.json();
+    const parsed = await readJsonBody(request, 2048);
+    if (parsed.error) return json({ error: parsed.error }, 400);
+    const body = parsed.body;
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
-    if (email !== env.OWNER_EMAIL.toLowerCase() || body.setup_key !== env.BOOTSTRAP_SECRET) return json({ error: "Invalid setup credentials." }, 403);
-    if (password.length < 12 || password.length > 128) return json({ error: "Password must be 12–128 characters." }, 400);
+    const setupKeyValid = await safeStringEqual(body.setup_key || "", env.BOOTSTRAP_SECRET);
+    if (email !== env.OWNER_EMAIL.toLowerCase() || !setupKeyValid) return json({ error: "Invalid setup credentials." }, 403);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 128) return json({ error: "Enter a valid email and a 12–128 character password." }, 400);
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const hash = await derivePassword(password, salt);
     const now = new Date().toISOString();
@@ -153,27 +178,43 @@ async function handleAdmin(request, url, env) {
   }
   if (path === "/api/admin/login" && request.method === "POST") {
     if (!requireSameOrigin(request, env)) return json({ error: "Invalid request origin." }, 403);
-    const body = await request.json();
+    const parsed = await readJsonBody(request, 2048);
+    if (parsed.error) return json({ error: parsed.error }, 400);
+    const body = parsed.body;
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
-    if (!email || password.length > 128) return json({ error: "Invalid email or password." }, 400);
-    const attemptKey = await sha256(email + ":" + (request.headers.get("CF-Connecting-IP") || "unknown"));
-    const attempt = await env.DB.prepare("SELECT attempts, window_started_at FROM login_attempts WHERE attempt_key=?").bind(attemptKey).first();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length > 128) return json({ error: "Invalid email or password." }, 400);
+    const clientIp = request.headers.get("CF-Connecting-IP") || "unknown";
+    const attemptKey = await sha256(email + ":" + clientIp);
+    const ipKey = await sha256("login-ip:" + clientIp);
+    const [attempt, ipAttempt] = await Promise.all([
+      env.DB.prepare("SELECT attempts,window_started_at FROM login_attempts WHERE attempt_key=?").bind(attemptKey).first(),
+      env.DB.prepare("SELECT attempts,window_started_at FROM login_ip_attempts WHERE ip_hash=?").bind(ipKey).first()
+    ]);
     const withinWindow = attempt && (Date.now() - Date.parse(attempt.window_started_at)) < 15 * 60 * 1000;
-    if (withinWindow && attempt.attempts >= 5) return json({ error: "Too many attempts. Try again in 15 minutes." }, 429);
+    const ipWithinWindow = ipAttempt && (Date.now() - Date.parse(ipAttempt.window_started_at)) < 15 * 60 * 1000;
+    if (withinWindow && attempt.attempts >= 5) return json({ error: "Too many attempts for this account. Try again in 15 minutes." }, 429);
+    if (ipWithinWindow && ipAttempt.attempts >= 20) return json({ error: "Too many attempts from this network. Try again in 15 minutes." }, 429);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM login_attempts WHERE window_started_at < datetime('now','-1 day')"),
+      env.DB.prepare("DELETE FROM login_ip_attempts WHERE window_started_at < datetime('now','-1 day')"),
+      env.DB.prepare("DELETE FROM admin_sessions WHERE expires_at < datetime('now','-7 days')")
+    ]);
     const credential = await env.DB.prepare(`
       SELECT c.password_salt,c.password_hash,c.iterations,a.email
       FROM admin_credentials c JOIN staff_accounts a ON a.email=c.email COLLATE NOCASE
       WHERE c.email=? COLLATE NOCASE AND a.active=1 AND a.role='owner' LIMIT 1
     `).bind(email).first();
-    let valid = false;
-    if (credential && password) {
-      const candidate = await derivePassword(password, decodeBase64(credential.password_salt), credential.iterations);
-      valid = candidate === credential.password_hash;
-    }
+    const salt = credential ? decodeBase64(credential.password_salt) : new Uint8Array(16);
+    const iterations = credential ? credential.iterations : PASSWORD_ITERATIONS;
+    const candidate = await derivePassword(password, salt, iterations);
+    const valid = Boolean(credential && safeHashEqual(candidate, credential.password_hash));
     if (!valid) {
-      if (withinWindow) await env.DB.prepare("UPDATE login_attempts SET attempts=attempts+1 WHERE attempt_key=?").bind(attemptKey).run();
-      else await env.DB.prepare("INSERT INTO login_attempts(attempt_key,attempts,window_started_at) VALUES(?,1,?) ON CONFLICT(attempt_key) DO UPDATE SET attempts=1,window_started_at=excluded.window_started_at").bind(attemptKey,new Date().toISOString()).run();
+      const now = new Date().toISOString();
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO login_attempts(attempt_key,attempts,window_started_at,updated_at) VALUES(?,1,?,?) ON CONFLICT(attempt_key) DO UPDATE SET attempts=CASE WHEN login_attempts.window_started_at >= datetime('now','-15 minutes') THEN login_attempts.attempts+1 ELSE 1 END,window_started_at=CASE WHEN login_attempts.window_started_at >= datetime('now','-15 minutes') THEN login_attempts.window_started_at ELSE excluded.window_started_at END,updated_at=excluded.updated_at").bind(attemptKey,now,now),
+        env.DB.prepare("INSERT INTO login_ip_attempts(ip_hash,attempts,window_started_at,updated_at) VALUES(?,1,?,?) ON CONFLICT(ip_hash) DO UPDATE SET attempts=CASE WHEN login_ip_attempts.window_started_at >= datetime('now','-15 minutes') THEN login_ip_attempts.attempts+1 ELSE 1 END,window_started_at=CASE WHEN login_ip_attempts.window_started_at >= datetime('now','-15 minutes') THEN login_ip_attempts.window_started_at ELSE excluded.window_started_at END,updated_at=excluded.updated_at").bind(ipKey,now,now)
+      ]);
       return json({ error: "البريد الإلكتروني أو كلمة المرور غير صحيحة." }, 401);
     }
     await env.DB.prepare("DELETE FROM login_attempts WHERE attempt_key=?").bind(attemptKey).run();
