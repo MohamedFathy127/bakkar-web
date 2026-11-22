@@ -128,6 +128,10 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <button type="submit">تسجيل الحركة</button>
 </form>
 <h3>كل المنتجات — المنشورة والخاصة</h3>
+<div class="panel"><strong>النشر الجماعي</strong><p class="muted">يمكن تطبيق القرار على كل المنتجات النشطة، أو استثناء المنتجات التي تحددها من القائمة. النشر الجماعي لن ينشر قطعة بلا سعر بيع أو توافق سيارة مؤكد.</p>
+<div class="action-row"><button id="publishAllBtn" type="button">إظهار كل القطع المؤهلة</button><button id="hideAllBtn" type="button" class="secondary">إخفاء كل القطع</button></div>
+<label>استثناء قطع من العملية الجماعية (اكتب أكواد/أسماء القطع مفصولة بفواصل)</label><textarea id="bulkVisibilityExclusions" rows="2" placeholder="مثال: كود القطعة أو جزء من اسمها"></textarea>
+</div>
 <div class="formgrid"><div><label>بحث بالاسم أو الكود أو الملاحظات</label><input id="productSearch" type="search" placeholder="اكتب اسم القطعة أو كودها..."></div><div><label>حالة النشر</label><select id="productVisibility"><option value="all">كل المنتجات</option><option value="public">المنشورة فقط</option><option value="private">الخاصة فقط</option><option value="missing">بدون سعر بيع</option></select></div></div>
 <div id="products">جارٍ تحميل المنتجات...</div>
 <h3>آخر حركات المخزون</h3><div id="movements">جارٍ التحميل...</div>
@@ -333,12 +337,31 @@ function renderProductsTable(){
   return true;
  });
  const money=value=>value==null?"—":(Number(value)/100).toLocaleString("ar-EG",{minimumFractionDigits:2,maximumFractionDigits:2})+" ج.م";
- $("products").innerHTML=rows.length?'<p class="muted">المعروض '+rows.length.toLocaleString("ar-EG")+' من '+adminProducts.length.toLocaleString("ar-EG")+' قطعة. الأسعار والملاحظات في هذا الجدول خاصة بالإدارة.</p><div style="overflow-x:auto"><table><thead><tr><th>القطعة / الكود</th><th>الحالة والتصنيف</th><th>النشر</th><th>سعر البيع</th><th>سعر الشراء</th><th>الرصيد</th><th>ملاحظات داخلية</th><th>إجراء</th></tr></thead><tbody>'+rows.map(x=>'<tr><td><strong>'+escapeHtml(x.part_name_ar)+'</strong><br><small>'+escapeHtml(x.part_code||"بدون كود")+'</small></td><td>'+escapeHtml(x.condition||"—")+'<br><small>'+escapeHtml(x.category_name_ar||"بدون تصنيف")+'</small></td><td>'+(x.is_public?'<strong>منشورة</strong>':'خاصة')+'</td><td>'+money(x.sale_price_piasters)+'</td><td>'+money(x.purchase_price_piasters)+'</td><td>'+Number(x.total_quantity||0).toLocaleString("ar-EG")+'</td><td>'+escapeHtml((x.internal_notes||"—").slice(0,90))+'</td><td><button class="secondary editBtn" data-id="'+escapeHtml(x.id)+'">تعديل</button> <button class="secondary archiveBtn" data-id="'+escapeHtml(x.id)+'" data-version="'+Number(x.version)+'">أرشفة</button></td></tr>').join("")+'</tbody></table></div>':"لا توجد منتجات مطابقة للبحث أو الفلتر.";
+ $("products").innerHTML=rows.length?'<p class="muted">المعروض '+rows.length.toLocaleString("ar-EG")+' من '+adminProducts.length.toLocaleString("ar-EG")+' قطعة. الأسعار والملاحظات في هذا الجدول خاصة بالإدارة.</p><div style="overflow-x:auto"><table><thead><tr><th>القطعة / الكود</th><th>الحالة والتصنيف</th><th>النشر</th><th>سعر البيع</th><th>سعر الشراء</th><th>الرصيد</th><th>مكان التخزين</th><th>ملاحظات داخلية</th><th>إجراء</th></tr></thead><tbody>'+rows.map(x=>'<tr><td><strong>'+escapeHtml(x.part_name_ar)+'</strong><br><small>'+escapeHtml(x.part_code||"بدون كود")+'</small></td><td>'+escapeHtml(x.condition||"—")+'<br><small>'+escapeHtml(x.category_name_ar||"بدون تصنيف")+'</small></td><td>'+(x.is_public?'<strong>منشورة</strong>':'خاصة')+'</td><td>'+money(x.sale_price_piasters)+'</td><td>'+money(x.purchase_price_piasters)+'</td><td>'+Number(x.total_quantity||0).toLocaleString("ar-EG")+'</td><td>'+escapeHtml(x.storage_locations||"غير مربوط بمخزن")+'</td><td>'+escapeHtml((x.internal_notes||"—").slice(0,90))+'</td><td><button class="secondary editBtn" data-id="'+escapeHtml(x.id)+'">تعديل</button> <button class="secondary archiveBtn" data-id="'+escapeHtml(x.id)+'" data-version="'+Number(x.version)+'">أرشفة</button></td></tr>').join("")+'</tbody></table></div>':"لا توجد منتجات مطابقة للبحث أو الفلتر.";
  document.querySelectorAll(".editBtn").forEach(btn=>btn.onclick=()=>openExistingProductForReview(btn.dataset.id));
  document.querySelectorAll(".archiveBtn").forEach(btn=>btn.onclick=async()=>{if(!confirm("أرشفة القطعة؟ ستختفي من الكتالوج العام مع الاحتفاظ بسجلها."))return;try{await api("/api/admin/products/"+btn.dataset.id,{method:"DELETE",body:JSON.stringify({version:Number(btn.dataset.version)})});message("adminMsg","تمت أرشفة القطعة.");await loadAdmin()}catch(e){message("adminMsg",e.message)}});
 }
 $("productSearch").addEventListener("input",renderProductsTable);
 $("productVisibility").addEventListener("change",renderProductsTable);
+async function bulkVisibility(isPublic){
+ const raw=$("bulkVisibilityExclusions").value.trim();
+ const exclusions=raw?raw.split(/[،,\\n]+/).map(v=>v.trim().toLocaleLowerCase("ar")).filter(Boolean):[];
+ const excludedIds=adminProducts.filter(p=>exclusions.some(term=>
+  String(p.part_name_ar||"").toLocaleLowerCase("ar").includes(term)||
+  String(p.part_code||"").toLocaleLowerCase("ar").includes(term)
+ )).map(p=>p.id);
+ const action=isPublic?"إظهار":"إخفاء";
+ if(!confirm("تأكيد "+action+" كل المنتجات النشطة"+(excludedIds.length?" مع استثناء "+excludedIds.length+" قطعة":"")+"؟"))return;
+ try{
+  $("publishAllBtn").disabled=true;$("hideAllBtn").disabled=true;
+  const result=await api("/api/admin/products/bulk-visibility",{method:"POST",body:JSON.stringify({is_public:isPublic,excluded_ids:excludedIds})});
+  message("adminMsg",action+" جماعي: تم تغيير "+result.updated+" قطعة، واستثناء "+excludedIds.length+"، ولم تُنشر "+Number(result.ineligible||0)+" قطعة لعدم استيفاء شروط النشر.");
+  await loadAdmin();
+ }catch(e){message("adminMsg",e.message)}
+ finally{$("publishAllBtn").disabled=false;$("hideAllBtn").disabled=false}
+}
+$("publishAllBtn").onclick=()=>bulkVisibility(true);
+$("hideAllBtn").onclick=()=>bulkVisibility(false);
 async function loadAdmin(){
  const [p,m,h,a]=await Promise.all([api("/api/admin/products?limit=100"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12"),api("/api/admin/analytics")]);
  const fmtNumber=value=>Number(value||0).toLocaleString("ar-EG");
@@ -642,7 +665,9 @@ async function handleAdmin(request, url, env) {
     const result = await env.DB.prepare(`
       SELECT p.id,p.part_name_ar,p.part_name_en,p.condition,p.part_code,p.sale_price_piasters,
         p.purchase_price_piasters,p.internal_notes,p.category_id,c.name_ar AS category_name_ar,
-        p.is_public,p.version,p.created_at,p.updated_at,COALESCE(SUM(ib.quantity),0) AS total_quantity
+        p.is_public,p.version,p.created_at,p.updated_at,COALESCE(SUM(ib.quantity),0) AS total_quantity,
+        COALESCE((SELECT group_concat(l.name, '، ') FROM inventory_balances ib2
+          JOIN locations l ON l.id=ib2.location_id WHERE ib2.product_id=p.id AND ib2.quantity>0),'') AS storage_locations
       FROM products p LEFT JOIN categories c ON c.id=p.category_id
       LEFT JOIN inventory_balances ib ON ib.product_id=p.id
       WHERE p.archived_at IS NULL GROUP BY p.id ORDER BY p.updated_at DESC,p.id ASC LIMIT ?
