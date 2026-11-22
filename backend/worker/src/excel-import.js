@@ -121,12 +121,9 @@ async function parseRows(db, rows) {
       if (item.year_to === undefined) item.year_to = null;
     }
     if (item.condition && item.condition.length > 40) { issues.push("الحالة أطول من الحد المسموح؛ تم ترك خانة الحالة فارغة."); item.condition = null; }
-    if (item.part_name_ar && item.part_name_ar.length > 160) issues.push("اسم القطعة أطول من الحد المسموح (160 حرفًا).");\n    if (item.part_code && item.part_code.length > 80) { issues.push("كود القطعة أطول من الحد المسموح؛ تم تركه فارغًا."); item.part_code = null; }
-    if (item.notes && item.notes.length > 2000) { issues.push("الملاحظات أطول من الحد المسموح؛ حُفظ النص الأصلي في بيانات المعاينة فقط."); item.notes = null; }
-    if (item.year_from !== null && item.year_to !== null && item.year_to < item.year_from) issues.push("سنة النهاية أقدم من سنة البداية.");
-    if (item.condition && item.condition.length > 40) { issues.push("الحالة أطول من الحد المسموح؛ تم ترك خانة الحالة فارغة وحُفظ النص الأصلي في بيانات المعاينة."); item.condition = null; }
     if (item.part_name_ar && item.part_name_ar.length > 160) issues.push("اسم القطعة أطول من الحد المسموح (160 حرفًا).");
-    if (item.notes && item.notes.length > 2000) { issues.push("الملاحظات أطول من الحد المسموح؛ حُفظ النص الأصلي في بيانات المعاينة ولم يُنسخ إلى سجل القطعة."); item.notes = null; }
+    if (item.part_code && item.part_code.length > 80) { issues.push("كود القطعة أطول من الحد المسموح؛ تم تركه فارغًا."); item.part_code = null; }
+    if (item.notes && item.notes.length > 2000) { issues.push("الملاحظات أطول من الحد المسموح؛ حُفظ النص الأصلي في بيانات المعاينة فقط."); item.notes = null; }
     const brandKey = normalize(item.brand_raw);
     const brand = brands.find(b => normalize(b.name_ar) === brandKey || normalize(b.name_en) === brandKey);
     item.brand_id = brand?.id || null;
@@ -197,8 +194,9 @@ async function handleExcelImport(request, url, env, session) {
       return reply({ error: "الملف لا يبدو كملف XLSX صالح." }, 400);
     }
     let workbook;
+    let XLSX;
     try {
-      const XLSX = await import("xlsx");
+      XLSX = await import("xlsx");
       workbook = XLSX.read(bytes, { type: "array", cellFormula: false, cellHTML: false, cellStyles: false, bookVBA: false });
     } catch {
       return reply({ error: "تعذر قراءة ملف Excel. تأكد أن الملف غير تالف." }, 400);
@@ -211,7 +209,7 @@ async function handleExcelImport(request, url, env, session) {
     const expectedHeaders = HEADERS.map(normalize);
     const missing = HEADERS.filter((header, i) => actualHeaders[i] !== expectedHeaders[i]);
     if (missing.length) return reply({ error: "عناوين الأعمدة أو ترتيبها لا يطابق قالب بكار.", expected_headers: HEADERS, actual_headers: sheetRows[0] || [] }, 400);
-    if (sheetRows.length - 1 > MAX_ROWS) return reply({ error: "الملف يتجاوز الحد الأقصى وهو 5000 صف." }, 413);
+    if (sheetRows.length - 1 > MAX_ROWS) return reply({ error: "الملف يتجاوز الحد الأقصى وهو 500 صف." }, 413);
     const rows = await parseRows(env.DB, sheetRows);
     if (!rows.length) return reply({ error: "لم يتم العثور على صفوف بيانات." }, 400);
     const hash = await sha256Hex(bytes);
