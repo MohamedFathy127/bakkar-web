@@ -296,16 +296,22 @@ async function handleExcelImport(request, url, env, session) {
     const rowsResult = await env.DB.prepare("SELECT * FROM import_batch_rows WHERE batch_id=? AND status='preview' ORDER BY row_number").bind(batchId).all();
     const rows = rowsResult.results || [];
     if (!rows.length) return reply({ error: "لا توجد صفوف معلقة في هذه الدفعة." }, 409);
+    const rowChoices = new Map();
     for (const row of rows) {
-      const choice = decisions[String(row.row_number)];
+      const item = JSON.parse(row.normalized_json);
+      const issues = JSON.parse(row.issues_json);
+      const candidates = await findCandidates(env.DB, item);
+      const supplied = decisions[String(row.row_number)];
+      const cleanAutomaticRow = issues.length === 0 && candidates.length === 0;
+      const choice = supplied === undefined && cleanAutomaticRow ? "create" : supplied;
       if (typeof choice !== "string" || !["skip", "create"].includes(choice) && !choice.startsWith("match:")) {
-        return reply({ error: "يجب اختيار قرار صحيح لكل صف قبل الاعتماد.", row_number: row.row_number }, 400);
+        return reply({ error: "يوجد صف يحتاج مراجعة. اختر إنشاء أو مطابقة أو تخطي.", row_number: row.row_number }, 400);
       }
+      rowChoices.set(row.row_number, choice);
     }
     let created = 0, matched = 0, skipped = 0, failed = 0;
     for (const row of rows) {
-      const choice = decisions[String(row.row_number)];
-      if (typeof choice !== "string" || !choice) return reply({ error: "يجب اختيار قرار لكل صف قبل الاعتماد.", row_number: row.row_number }, 400);
+      const choice = rowChoices.get(row.row_number);
       if (choice === "skip") {
         await env.DB.prepare("UPDATE import_batch_rows SET status='skipped',applied_at=? WHERE id=? AND status='preview'")
           .bind(new Date().toISOString(), row.id).run();
