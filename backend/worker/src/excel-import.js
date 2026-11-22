@@ -105,43 +105,58 @@ async function sha256Hex(bytes) {
 function rowToObject(row) {
   return Object.fromEntries(HEADERS.map((header, index) => [header, row[index] ?? null]));
 }
-async function findCandidates(db, item, cachedProducts = []) {
-  if (!item.part_name_ar && !item.part_code) return [];
-  const nameKey = normalize(item.part_name_ar);
-  const codeKey = normalize(item.part_code);
-  const exact = await db.prepare(`
-    SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-      p.sale_price_piasters, p.purchase_price_piasters,
-      COALESCE(SUM(ib.quantity),0) AS total_quantity
-    FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
-    WHERE p.archived_at IS NULL AND (
-      (? <> '' AND lower(trim(p.part_name_ar))=lower(trim(?))) OR
-      (? <> '' AND lower(trim(p.part_code))=lower(trim(?)))
-    )
-    GROUP BY p.id ORDER BY p.updated_at DESC
-  `).bind(item.part_name_ar || "", item.part_name_ar || "", item.part_code || "", item.part_code || "").all();
-  const byId = new Map();
-  for (const product of [...(exact.results || []), ...(cachedProducts || [])]) byId.set(product.id, product);
-  const candidates = [...byId.values()].filter(p =>
-    (nameKey && normalize(p.part_name_ar) === nameKey) ||
-    (codeKey && normalize(p.part_code) === codeKey)
-  ).slice(0, 10);
-  if (!candidates.length) return [];
-  const ids = candidates.map(x => x.id);
-  const placeholders = ids.map(() => "?").join(",");
-  const fitments = await db.prepare(`
-    SELECT f.product_id, f.brand_id, b.name_ar AS brand_name_ar, f.model,
-      f.year_from, f.year_to, f.compatibility_status
-    FROM product_fitments f JOIN brands b ON b.id=f.brand_id
-    WHERE f.product_id IN (${placeholders})
-    ORDER BY f.product_id, b.name_ar, f.model
-  `).bind(...ids).all();
-  const byProduct = new Map();
-  for (const fitment of fitments.results || []) {
-    if (!byProduct.has(fitment.product_id)) byProduct.set(fitment.product_id, []);
-    byProduct.get(fitment.product_id).push(fitment);
+function parseCandidate(row) {
+  let fitments = [];
+  try { fitments = typeof row.fitments_json === "string" ? JSON.parse(row.fitments_json) : (row.fitments || []); }
+  catch { fitments = []; }
+  return { ...row, fitments: Array.isArray(fitments) ? fitments : [] };
+}
+const CANDIDATE_SQL = `
+  SELECT p.id, p.part_name_ar, p.part_code, p.condition,
+    p.sale_price_piasters, p.purchase_price_piasters,
+    COALESCE((SELECT SUM(ib.quantity) FROM inventory_balances ib WHERE ib.product_id=p.id),0) AS total_quantity,
+    COALESCE((
+      SELECT json_group_array(json_object(
+        'brand_id',f.brand_id,'brand_name_ar',b.name_ar,'model',f.model,
+        'year_from',f.year_from,'year_to',f.year_to,
+        'compatibility_status',f.compatibility_status
+      ))
+      FROM product_fitments f JOIN brands b ON b.id=f.brand_id
+      WHERE f.product_id=p.id
+    ),'[]') AS fitments_json
+  FROM products p
+  WHERE p.archived_at IS NULL AND (
+    (? <> '' AND lower(trim(p.part_name_ar))=lower(trim(?))) OR
+    (? <> '' AND lower(trim(p.part_code))=lower(trim(?)))
+  )
+  ORDER BY p.updated_at DESC LIMIT 50
+`;
+async function findCandidatesForItems(db, items, cachedProducts = []) {
+  const exactByItem = items.map(() => []);
+  for (let offset = 0; offset < items.length; offset += 40) {
+    const chunk = items.slice(offset, offset + 40);
+    const statements = chunk.map(item => db.prepare(CANDIDATE_SQL).bind(
+      item.part_name_ar || "", item.part_name_ar || "",
+      item.part_code || "", item.part_code || ""
+    ));
+    const results = await db.batch(statements);
+    for (let index = 0; index < chunk.length; index++) {
+      exactByItem[offset + index] = (results[index]?.results || []).map(parseCandidate);
+    }
   }
-  return candidates.map(x => ({ ...x, fitments: byProduct.get(x.id) || [] }));
+  const cached = (cachedProducts || []).map(parseCandidate);
+  return items.map((item, index) => {
+    const nameKey = normalize(item.part_name_ar);
+    const codeKey = normalize(item.part_code);
+    const byId = new Map();
+    for (const product of [...exactByItem[index], ...cached]) {
+      if ((nameKey && normalize(product.part_name_ar) === nameKey) ||
+          (codeKey && normalize(product.part_code) === codeKey)) {
+        byId.set(product.id, product);
+      }
+    }
+    return [...byId.values()].slice(0, 10);
+  });
 }
 function likelyBrandModelMismatch(brand, model) {
   if (!brand || !model) return false;
@@ -188,7 +203,16 @@ async function parseRows(db, rows) {
     db.prepare(`
       SELECT p.id, p.part_name_ar, p.part_code, p.condition,
         p.sale_price_piasters, p.purchase_price_piasters,
-        COALESCE(SUM(ib.quantity),0) AS total_quantity
+        COALESCE(SUM(ib.quantity),0) AS total_quantity,
+        COALESCE((
+          SELECT json_group_array(json_object(
+            'brand_id',f.brand_id,'brand_name_ar',b.name_ar,'model',f.model,
+            'year_from',f.year_from,'year_to',f.year_to,
+            'compatibility_status',f.compatibility_status
+          ))
+          FROM product_fitments f JOIN brands b ON b.id=f.brand_id
+          WHERE f.product_id=p.id
+        ),'[]') AS fitments_json
       FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
       WHERE p.archived_at IS NULL
       GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500
@@ -222,9 +246,10 @@ async function parseRows(db, rows) {
     if (item.sale_price_piasters === undefined) { issues.push("سعر البيع غير صالح؛ سيظل فارغًا حتى مراجعته."); item.sale_price_piasters = null; }
     if (item.purchase_price_piasters === undefined) { issues.push("سعر الشراء غير صالح؛ سيظل فارغًا حتى مراجعته."); item.purchase_price_piasters = null; }
     if (item.year_from === undefined || item.year_to === undefined) {
-      issues.push("إحدى سنوات التوافق غير صالحة؛ تم ترك سنة التوافق فارغة.");
+      issues.push("إحدى سنوات التوافق غير صالحة؛ تم ترك سنة التوافق فارغة ولم يتم إنشاء توافق سيارة.");
       if (item.year_from === undefined) item.year_from = null;
       if (item.year_to === undefined) item.year_to = null;
+      item.model = null;
     }
     if (item.condition && item.condition.length > 40) { issues.push("الحالة أطول من الحد المسموح؛ تم ترك خانة الحالة فارغة."); item.condition = null; }
     if (item.part_name_ar && item.part_name_ar.length > 160) issues.push("اسم القطعة أطول من الحد المسموح (160 حرفًا).");
@@ -239,7 +264,8 @@ async function parseRows(db, rows) {
     if (item.model && item.model.length > 80) { issues.push("موديل السيارة أطول من الحد المسموح؛ تم ترك التوافق غير محدد."); item.model = null; }
     if (item.model && !item.brand_id) issues.push("يوجد موديل بدون ماركة معروفة؛ لم يتم إنشاء توافق سيارة.");
     if (item.model && likelyBrandModelMismatch(brand, item.model)) {
-      issues.push("الموديل يبدو غير متوافق مع الماركة المحددة؛ راجع الماركة والموديل قبل الاعتماد.");
+      issues.push("الموديل يبدو غير متوافق مع الماركة المحددة؛ راجع الماركة والموديل قبل الاعتماد. لم يتم حفظ توافق السيارة تلقائيًا.");
+      item.model = null;
     }
     const locationKey = normalize(item.location_raw);
     const location = locations.find(l => l.active && normalize(l.name) === locationKey);
@@ -254,7 +280,6 @@ async function parseRows(db, rows) {
     }
     if (item.sale_price_piasters === null) issues.push("سعر البيع غير مسجل؛ سيظل فارغًا وليس صفرًا.");
     if (item.purchase_price_piasters === null) issues.push("سعر الشراء غير مسجل؛ سيظل فارغًا وليس صفرًا.");
-    const candidates = await findCandidates(db, item, cachedProducts);
     // Only flag a true duplicate identity in the same location. A reused part
     // code or name alone is not enough: different models/years/conditions may
     // represent distinct stock records.
@@ -263,8 +288,14 @@ async function parseRows(db, rows) {
       issues.push("يوجد صف مطابق تمامًا لنفس القطعة والتوافق والحالة والكود وفي نفس المخزن؛ راجع الصفين قبل الاستيراد.");
     }
     if (fingerprint !== '["","","",null,null,"","",""]') seenRows.add(fingerprint);
-    if (candidates.length) issues.push("احتمال تكرار: راجع السجلات الموجودة واختر المطابقة أو إنشاء سجل مستقل.");
-    output.push({ row_number: index + 1, raw, item, issues, candidates });
+    output.push({ row_number: index + 1, raw, item, issues, candidates: [] });
+  }
+  const candidatesByRow = await findCandidatesForItems(db, output.map(row => row.item), cachedProducts);
+  for (let index = 0; index < output.length; index++) {
+    output[index].candidates = candidatesByRow[index];
+    if (candidatesByRow[index].length) {
+      output[index].issues.push("احتمال تكرار: راجع السجلات الموجودة واختر المطابقة أو إنشاء سجل مستقل.");
+    }
   }
   return output;
 }
@@ -305,16 +336,16 @@ async function handleExcelImport(request, url, env, session) {
     const batchId = crypto.randomUUID();
     const now = new Date().toISOString();
     try {
-      await env.DB.prepare("INSERT INTO import_batches(id,filename,file_sha256,status,total_rows,created_by,created_at) VALUES(?,?,?,'preview',?,?,?)")
-        .bind(batchId, filename, hash, rows.length, session.email, now).run();
-      for (let offset = 0; offset < rows.length; offset += 40) {
-        const chunk = rows.slice(offset, offset + 40);
-        const statements = chunk.map(row => env.DB.prepare(`
+      const statements = [
+        env.DB.prepare("INSERT INTO import_batches(id,filename,file_sha256,status,total_rows,created_by,created_at) VALUES(?,?,?,'preview',?,?,?)")
+          .bind(batchId, filename, hash, rows.length, session.email, now),
+        ...rows.map(row => env.DB.prepare(`
           INSERT INTO import_batch_rows(id,batch_id,row_number,raw_json,normalized_json,issues_json,status,created_at)
           VALUES(?,?,?,?,?,?,'preview',?)
-        `).bind(crypto.randomUUID(), batchId, row.row_number, JSON.stringify(row.raw), JSON.stringify(row.item), JSON.stringify(row.issues), now));
-        await env.DB.batch(statements);
-      }
+        `).bind(crypto.randomUUID(), batchId, row.row_number, JSON.stringify(row.raw), JSON.stringify(row.item), JSON.stringify(row.issues), now)),
+      ];
+      // One D1 transaction: a failed staging write leaves no half-created batch.
+      await env.DB.batch(statements);
     } catch (error) {
       const existing = await env.DB.prepare("SELECT id,status,filename FROM import_batches WHERE file_sha256=? LIMIT 1").bind(hash).first();
       if (existing) return reply({ error: "تم رفع هذا الملف من قبل. استخدم المعاينة الموجودة بدل إعادة استيراده.", existing_batch: existing }, 409);
