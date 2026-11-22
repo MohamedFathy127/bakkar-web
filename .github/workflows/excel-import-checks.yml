@@ -1,4 +1,4 @@
-name: Excel import checks
+name: Excel import reliability checks
 
 on:
   push:
