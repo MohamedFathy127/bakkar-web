@@ -201,7 +201,7 @@ $("previewExcelBtn").onclick=async()=>{
  const file=$("excelFile").files?.[0];if(!file){importMessage("اختر ملف XLSX أولًا.");return}
  try{
   $("previewExcelBtn").disabled=true;importMessage("جارٍ قراءة ملف Excel محليًا...");
-  if(!file.name.toLowerCase().endsWith(".xlsx")||file.size<4||file.size>5*1024*1024)throw Error("اختر ملف XLSX لا يتجاوز 5 ميجابايت.");
+  if(!file.name.toLowerCase().endsWith(".xlsx")||file.size<4||file.size>2*1024*1024)throw Error("اختر ملف XLSX لا يتجاوز 2 ميجابايت.");
   const XLSX=await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
   const workbook=XLSX.read(await file.arrayBuffer(),{type:"array",cellFormula:false,cellHTML:false,cellStyles:false,bookVBA:false,sheetRows:102});
   const sheetName=workbook.SheetNames?.[0];if(!sheetName)throw Error("الملف لا يحتوي على ورقة عمل.");
