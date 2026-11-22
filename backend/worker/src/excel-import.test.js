@@ -17,7 +17,9 @@ test("accepts Arabic-Indic and Persian digits and Arabic decimal separator", () 
 
 test("rejects ambiguous, mixed and unsafe numeric input instead of extracting a number", () => {
   assert.equal(numberValue("12 قطعة"), undefined);
-  assert.equal(numberValue("1,2,3"), 123);
+  assert.equal(numberValue("1,234.50"), 1234.5);
+  assert.equal(numberValue("1234,50"), 1234.5);
+  assert.equal(numberValue("1,2,3"), undefined);
   assert.equal(numberValue("Infinity"), undefined);
   assert.equal(moneyPiasters("-10"), undefined);
   assert.equal(integerValue("1.5"), undefined);
