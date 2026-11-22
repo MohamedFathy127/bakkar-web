@@ -1,5 +1,3 @@
-import * as XLSX from "xlsx";
-
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
@@ -200,6 +198,7 @@ async function handleExcelImport(request, url, env, session) {
     }
     let workbook;
     try {
+      const XLSX = await import("xlsx");
       workbook = XLSX.read(bytes, { type: "array", cellFormula: false, cellHTML: false, cellStyles: false, bookVBA: false });
     } catch {
       return reply({ error: "تعذر قراءة ملف Excel. تأكد أن الملف غير تالف." }, 400);
