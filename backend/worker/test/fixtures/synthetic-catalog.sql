@@ -16,15 +16,20 @@ INSERT INTO products(
 ) VALUES
   ('product-public-1','مساعد خلفي','Rear shock','category-synthetic','جديدة','SYN-001','ملاحظة داخلية',0,9000,1,'2026-11-22T00:00:00.000Z','2026-11-22T00:00:00.000Z'),
   ('product-public-2','فلتر هواء','Air filter','category-synthetic','جديدة','SYN-002','ملاحظة خاصة',12500,8000,1,'2026-11-22T00:00:00.000Z','2026-11-22T00:00:00.000Z'),
-  ('product-private-1','قطعة خاصة','Private part','category-synthetic','استيراد','SYN-003','لا تظهر للعامة',5000,3000,0,'2026-11-22T00:00:00.000Z','2026-11-22T00:00:00.000Z');
+  ('product-private-1','قطعة خاصة','Private part','category-synthetic','استيراد','SYN-003','لا تظهر للعامة',5000,3000,0,'2026-11-22T00:00:00.000Z','2026-11-22T00:00:00.000Z'),
+  ('product-archived-1','قطعة مؤرشفة','Archived part','category-synthetic','جديدة','SYN-004','لا تظهر للعامة',7000,4000,1,'2026-11-22T00:00:00.000Z','2026-11-22T00:00:00.000Z');
+
+UPDATE products SET archived_at='2026-11-22T00:00:00.000Z' WHERE id='product-archived-1';
 
 INSERT INTO product_fitments(id,product_id,brand_id,model,year_from,year_to,compatibility_status)
 VALUES
   ('fitment-public-1','product-public-1','brand-kia','Sportage',2020,2024,'confirmed'),
   ('fitment-public-2','product-public-1','brand-hyundai','Tucson',2021,2023,'confirmed'),
   ('fitment-public-3','product-public-2','brand-kia','Sportage',2018,2022,'confirmed'),
-  ('fitment-private-1','product-private-1','brand-kia','Sportage',2020,2024,'confirmed');
+  ('fitment-private-1','product-private-1','brand-kia','Sportage',2020,2024,'confirmed'),
+  ('fitment-archived-1','product-archived-1','brand-kia','Sportage',2020,2024,'confirmed');
 
 INSERT INTO stock_movements(
   id,product_id,location_id,movement_type,quantity_delta,balance_after,reason,actor_email,created_at
 ) VALUES('movement-synthetic-1','product-public-1','location-synthetic','in',4,4,'synthetic local test','test@example.invalid','2026-11-22T00:00:00.000Z');
+
