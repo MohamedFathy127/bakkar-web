@@ -1,3 +1,5 @@
+import { handleInventoryAdmin } from "./inventory.js";
+
 /**
  * Bakkar Inventory API
  * Public catalog is anonymous. Admin UI is served on this Worker origin and
@@ -260,6 +262,8 @@ async function handleAdmin(request, url, env) {
     `).bind(limit).all();
     return json({ data: result.results || [] });
   }
+  const inventoryResponse = await handleInventoryAdmin(request, url, env, session);
+  if (inventoryResponse) return inventoryResponse;
   return json({ error: "Route not found." }, 404);
 }
 async function createSession(email, env) {
