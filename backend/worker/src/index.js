@@ -98,7 +98,7 @@ async function getSession(request, env) {
   const session = await env.DB.prepare(`
     SELECT s.email, s.expires_at, a.role
     FROM admin_sessions s JOIN staff_accounts a ON a.email = s.email COLLATE NOCASE
-    WHERE s.token_hash = ? AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now') AND a.active = 1
+    WHERE s.token_hash = ? AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now') AND a.active = 1 AND a.role = 'owner'
     LIMIT 1
   `).bind(tokenHash).first();
   return session || null;
