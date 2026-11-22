@@ -39,8 +39,16 @@ The code in this branch is not automatically proof of what is currently deployed
 | POST | `/api/admin/logout` | Authenticated browser session + same-origin | Revokes the current session |
 | GET | `/api/admin/me` | Owner session | Returns the signed-in identity |
 | GET | `/api/admin/products` | Owner session | Lists internal products and total stock |
+| GET | `/api/admin/products/:id` | Owner session | Reads one product, vehicle fitments and per-location balances |
+| POST | `/api/admin/products` | Owner session + same-origin | Creates a product and its fitments |
+| PUT | `/api/admin/products/:id` | Owner session + same-origin | Updates a product using optimistic version checks |
+| DELETE | `/api/admin/products/:id` | Owner session + same-origin | Archives a product; it does not hard-delete history |
+| GET | `/api/admin/meta` | Owner session | Lists brands, categories and storage locations |
+| POST | `/api/admin/locations` | Owner session + same-origin | Creates a storage location |
+| GET | `/api/admin/stock-movements` | Owner session | Reads stock movement history |
+| POST | `/api/admin/stock-movements` | Owner session + same-origin | Records an inbound, outbound or adjustment movement |
 
-No product-write or stock-movement routes are enabled yet. The dashboard is deliberately read-only at this stage.
+These routes are implemented on the `feature/inventory-management` branch only. They are not deployed. The existing admin dashboard still needs its product and stock-management interface wired to these routes.
 
 ## Deployment and test status
 
@@ -83,3 +91,14 @@ Use synthetic test data locally. Do not point local development at production D1
 - **PBKDF2**: a password-based key derivation function that makes offline guessing more expensive.
 - **Bootstrap secret**: a temporary secret used only once to create the first owner account.
 - **Prepared statement**: SQL with placeholders, keeping user input separate from SQL code.
+
+
+## Inventory management implementation (not deployed)
+
+- Work is isolated on `feature/inventory-management`, based on `feature/inventory-foundation`.
+- Added owner-only product create/read/update/archive routes, vehicle-fitment validation, reference-data reads, storage-location creation, stock-movement creation and movement-history reads.
+- Product updates use a version field to reject stale edits. Product archive is soft-delete so references and audit history remain intact.
+- Stock movement requests validate signed quantities and prevent negative balances; movements are designed to be append-only under the existing database triggers.
+- Added `wrangler.test.jsonc` and explicit `dev:test` / `deploy:test` scripts so test commands target the isolated test D1 database, not the production database configured in `wrangler.jsonc`.
+- Added a GitHub Actions syntax check for both Worker modules.
+- Not yet verified: deployed runtime behavior for the new routes, atomic stock updates, concurrency behavior, or browser UI integration. Do not deploy to either Worker until syntax checks and test-environment validation are complete.
