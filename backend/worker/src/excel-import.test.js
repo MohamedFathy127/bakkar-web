@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   normalize, textValue, numberValue, moneyPiasters, integerValue, yearValue,
-  rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned, findDuplicateMatchedTargets,
+  rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned, findDuplicateMatchedTargets, findCandidatesForItems,
 } from "./excel-import.js";
 
 test("normalizes Arabic spelling, diacritics, tatweel and separators", () => {
@@ -19,6 +19,8 @@ test("rejects ambiguous, mixed and unsafe numeric input instead of extracting a 
   assert.equal(numberValue("12 قطعة"), undefined);
   assert.equal(numberValue("1,234.50"), 1234.5);
   assert.equal(numberValue("1234,50"), 1234.5);
+  assert.equal(moneyPiasters("1,234"), 123400);
+  assert.equal(moneyPiasters("1,2"), 120);
   assert.equal(numberValue("1,2,3"), undefined);
   assert.equal(numberValue("Infinity"), undefined);
   assert.equal(moneyPiasters("-10"), undefined);
@@ -85,4 +87,34 @@ test("blocks two matched rows targeting one product/location but allows differen
   assert.equal(findDuplicateMatchedTargets(rows, separateTargets), null);
   const skipped = new Map([[2, "skip"], [3, "match:product-1"], [4, "match:product-1"]]);
   assert.equal(findDuplicateMatchedTargets(rows, skipped), null);
+});
+
+test("candidate lookups are batched in groups of 40 and merge normalized recent candidates", async () => {
+  const batchSizes = [];
+  const db = {
+    prepare(sql) {
+      return {
+        bind(...values) { return { sql, values }; },
+      };
+    },
+    async batch(statements) {
+      batchSizes.push(statements.length);
+      return statements.map(() => ({ results: [] }));
+    },
+  };
+  const items = [
+    { part_name_ar: "اكصدام", part_code: null },
+    ...Array.from({ length: 85 }, (_, i) => ({ part_name_ar: "قطعة " + i, part_code: null })),
+  ];
+  const cached = [{
+    id: "older-normalized-match",
+    part_name_ar: "أَكْصِدام",
+    part_code: null,
+    fitments_json: JSON.stringify([{ brand_name_ar: "هيونداي", model: "Venue" }]),
+  }];
+  const candidates = await findCandidatesForItems(db, items, cached);
+  assert.deepEqual(batchSizes, [40, 40, 6]);
+  assert.equal(candidates.length, 86);
+  assert.equal(candidates[0][0].id, "older-normalized-match");
+  assert.equal(candidates[0][0].fitments[0].model, "Venue");
 });
