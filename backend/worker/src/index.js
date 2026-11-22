@@ -488,6 +488,100 @@ async function handleAdmin(request, url, env) {
     `).bind(limit).all();
     return json({ data: result.results || [] });
   }
+  if (path === "/api/admin/analytics" && request.method === "GET") {
+    const [productStats, stockStats, locations, brands, movements, imports] = await Promise.all([
+      env.DB.prepare(`
+        SELECT COUNT(*) AS active_products,
+          SUM(CASE WHEN is_public=1 THEN 1 ELSE 0 END) AS public_products,
+          SUM(CASE WHEN part_code IS NULL OR trim(part_code)='' THEN 1 ELSE 0 END) AS missing_codes,
+          SUM(CASE WHEN sale_price_piasters IS NULL THEN 1 ELSE 0 END) AS missing_sale_prices,
+          SUM(CASE WHEN purchase_price_piasters IS NULL THEN 1 ELSE 0 END) AS missing_purchase_prices,
+          SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM product_fitments f WHERE f.product_id=p.id) THEN 1 ELSE 0 END) AS without_fitment,
+          SUM(CASE WHEN EXISTS (SELECT 1 FROM product_fitments f WHERE f.product_id=p.id AND f.compatibility_status='pending') THEN 1 ELSE 0 END) AS with_pending_fitment
+        FROM products p WHERE archived_at IS NULL
+      `).first(),
+      env.DB.prepare(`
+        SELECT COALESCE(SUM(ib.quantity),0) AS total_units,
+          COALESCE(SUM(ib.quantity * COALESCE(p.purchase_price_piasters,0)),0) AS estimated_purchase_value_piasters,
+          COALESCE(SUM(ib.quantity * COALESCE(p.sale_price_piasters,0)),0) AS estimated_sale_value_piasters,
+          SUM(CASE WHEN p.purchase_price_piasters IS NULL AND ib.quantity>0 THEN 1 ELSE 0 END) AS balances_without_purchase_price
+        FROM inventory_balances ib JOIN products p ON p.id=ib.product_id
+        WHERE p.archived_at IS NULL
+      `).first(),
+      env.DB.prepare(`
+        SELECT l.id,l.name,COUNT(DISTINCT ib.product_id) AS product_count,
+          COALESCE(SUM(ib.quantity),0) AS total_units
+        FROM locations l LEFT JOIN inventory_balances ib ON ib.location_id=l.id
+        LEFT JOIN products p ON p.id=ib.product_id AND p.archived_at IS NULL
+        WHERE l.active=1 GROUP BY l.id,l.name ORDER BY total_units DESC,l.name
+      `).all(),
+      env.DB.prepare(`
+        SELECT b.id,b.name_ar,COUNT(DISTINCT f.product_id) AS product_count,
+          COALESCE(SUM(q.total_quantity),0) AS total_units
+        FROM brands b
+        LEFT JOIN (
+          SELECT DISTINCT f.brand_id,p.id,
+            COALESCE((SELECT SUM(ib.quantity) FROM inventory_balances ib WHERE ib.product_id=p.id),0) AS total_quantity
+          FROM product_fitments f JOIN products p ON p.id=f.product_id
+          WHERE p.archived_at IS NULL
+        ) q ON q.brand_id=b.id
+        LEFT JOIN product_fitments f ON f.brand_id=b.id AND f.product_id=q.id
+        GROUP BY b.id,b.name_ar ORDER BY product_count DESC,b.name_ar
+      `).all(),
+      env.DB.prepare(`
+        SELECT movement_type,COUNT(*) AS movement_count,
+          COALESCE(SUM(ABS(quantity_delta)),0) AS units
+        FROM stock_movements
+        WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days')
+        GROUP BY movement_type ORDER BY movement_type
+      `).all(),
+      env.DB.prepare(`
+        SELECT filename,status,total_rows,created_count,updated_count,skipped_count,error_count,created_at,applied_at
+        FROM import_batches ORDER BY created_at DESC LIMIT 8
+      `).all(),
+    ]);
+    return json({
+      overview: productStats || {},
+      stock: stockStats || {},
+      by_location: locations.results || [],
+      by_brand: brands.results || [],
+      movements_30d: movements.results || [],
+      recent_imports: imports.results || [],
+    });
+  }
+  if (path === "/api/admin/export-data" && request.method === "GET") {
+    const [count, result] = await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) AS total FROM products WHERE archived_at IS NULL").first(),
+      env.DB.prepare(`
+        SELECT p.id,p.part_name_ar,p.condition,p.part_code,p.sale_price_piasters,
+          p.purchase_price_piasters,p.internal_notes,
+          COALESCE((
+            SELECT json_group_array(json_object(
+              'brand_name_ar',b.name_ar,'model',f.model,'year_from',f.year_from,
+              'year_to',f.year_to,'compatibility_status',f.compatibility_status
+            ))
+            FROM product_fitments f JOIN brands b ON b.id=f.brand_id
+            WHERE f.product_id=p.id
+          ),'[]') AS fitments_json,
+          COALESCE((
+            SELECT json_group_array(json_object(
+              'location_id',l.id,'location_name',l.name,'quantity',ib.quantity
+            ))
+            FROM inventory_balances ib JOIN locations l ON l.id=ib.location_id
+            WHERE ib.product_id=p.id
+            ORDER BY l.name
+          ),'[]') AS balances_json
+        FROM products p WHERE p.archived_at IS NULL
+        ORDER BY p.updated_at DESC,p.id ASC LIMIT 10000
+      `).all(),
+    ]);
+    const rows = (result.results || []).map(row => ({
+      ...row,
+      fitments: JSON.parse(row.fitments_json || "[]"),
+      balances: JSON.parse(row.balances_json || "[]"),
+    }));
+    return json({ total: Number(count?.total || 0), exported: rows.length, truncated: rows.length < Number(count?.total || 0), data: rows });
+  }
   const importResponse = await handleExcelImport(request, url, env, session);
   if (importResponse) return importResponse;
   const inventoryResponse = await handleInventoryAdmin(request, url, env, session);
