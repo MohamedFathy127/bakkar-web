@@ -532,8 +532,13 @@ async function handleAdmin(request, url, env) {
     return json({ needs_setup: !owner });
   }
   if (path === "/api/admin/setup" && request.method === "POST") {
+    if (!env.ALLOWED_ORIGIN) return json({ error: "Owner setup is not configured. Missing binding: ALLOWED_ORIGIN." }, 503);
     if (!requireSameOrigin(request, env)) return json({ error: "Invalid request origin." }, 403);
-    if (!env.OWNER_EMAIL || !env.BOOTSTRAP_SECRET) return json({ error: "Owner setup is not configured. Set OWNER_EMAIL and BOOTSTRAP_SECRET first." }, 503);
+    const missingSetupBindings = ["OWNER_EMAIL", "BOOTSTRAP_SECRET"].filter(name => !env[name]);
+    if (missingSetupBindings.length) {
+      const bindingLabel = missingSetupBindings.length === 1 ? "binding" : "bindings";
+      return json({ error: `Owner setup is not configured. Missing ${bindingLabel}: ${missingSetupBindings.join(", ")}.` }, 503);
+    }
     const existing = await env.DB.prepare("SELECT email FROM staff_accounts WHERE role='owner' LIMIT 1").first();
     if (existing) return json({ error: "Owner account has already been initialized." }, 409);
     const parsed = await readJsonBody(request, 2048);
@@ -777,6 +782,7 @@ export default {
           "x-frame-options": "DENY", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" }
       });
       if (url.pathname === "/api/health" && request.method === "GET") {
+        if (!env.DB) return json({ error: "Database binding DB is not configured." }, 503, cors);
         const check = await env.DB.prepare("SELECT 1 AS ok").first();
         return json({ status: check?.ok === 1 ? "ok" : "degraded", service: "bakkar-inventory-api" }, 200, cors);
       }
@@ -791,6 +797,7 @@ export default {
         return response;
       }
       if (url.pathname.startsWith("/api/admin/")) {
+        if (!env.DB) return json({ error: "Database binding DB is not configured." }, 503, cors);
         const response = await handleAdmin(request,url,env);
         for (const [key,value] of Object.entries(cors)) response.headers.set(key,value);
         return response;
@@ -802,3 +809,4 @@ export default {
     }
   }
 };
+
