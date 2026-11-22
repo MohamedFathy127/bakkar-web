@@ -44,14 +44,11 @@ No product-write or stock-movement routes are enabled yet. The dashboard is deli
 
 ## Deployment and test status
 
-1. Review and apply `backend/migrations/0002_admin_auth.sql` to the existing `bakkar-inventory` D1 database exactly once. Do not rerun it after successful application.
-2. Apply `backend/migrations/0003_login_ip_throttle.sql` once to the isolated test D1 database before deploying the hardened test Worker. Do not apply it to production without a separate approval.
-3. Configure Worker secrets/variables in the Cloudflare dashboard:
-   - `OWNER_EMAIL`: the exact owner email approved for the initial account.
-   - `BOOTSTRAP_SECRET`: a long, random, one-time setup secret (at least 32 random characters). Store it as a Worker secret, never in Git.
-3. Deploy this branch only after explicit approval and after confirming the existing production Worker will not be overwritten unexpectedly.
-5. Visit the test Worker `/admin`, initialize the owner once, then remove the `BOOTSTRAP_SECRET` secret from Worker settings. The owner account cannot be initialized a second time through this endpoint.
-6. Test login, wrong-password behavior, rate limits, logout, expiry and anonymous public catalog access.
+- Migrations `0001`, `0002`, and `0003` are applied to the isolated test D1 database only. Production D1 remains untouched.
+- The hardened source is deployed to the isolated test Worker, bound to `bakkar-inventory-test`.
+- The test Worker retains `OWNER_EMAIL`; the one-time `BOOTSTRAP_SECRET` was removed after owner setup.
+- Production Worker and production D1 have not been changed.
+- Remaining verification: browser/API checks for valid and invalid login, IP throttling, malformed and oversized bodies, same-origin rejection, logout, and session expiry. Do not claim these checks passed until performed.
 
 Do not put the owner email, bootstrap secret, password, session token or other credentials in this repository. Never ask the user to paste secrets into chat.
 
