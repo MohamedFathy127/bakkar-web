@@ -82,7 +82,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <section class="panel">
 <p>استورد ملف برنامج المخزن بعد مراجعة الصفوف، أو صدّر نسخة Excel محدثة من بيانات الموقع.</p>
 <div class="action-row"><button id="exportExcelBtn" type="button" class="secondary">تصدير المخزون إلى Excel</button><button id="backupDataBtn" type="button" class="secondary">تنزيل نسخة احتياطية شاملة</button><span id="exportExcelMsg" class="muted"></span><span id="backupDataMsg" class="muted"></span></div>
-<p class="muted">النسخة الاحتياطية تشمل بيانات المنتجات والمخازن والأرصدة والحركات وسجل التدقيق وسجلات الاستيراد. لا تتضمن كلمات المرور أو جلسات الدخول.</p>
+
 <p>ارفع ملف XLSX لمعاينة الصفوف أولًا. لن يتغير المخزون إلا بعد اختيار قرار لكل صف والضغط على اعتماد.</p>
 <input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
 <button id="previewExcelBtn" type="button">رفع الملف ومعاينة الصفوف</button>
