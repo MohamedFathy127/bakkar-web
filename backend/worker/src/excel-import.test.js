@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   normalize, textValue, numberValue, moneyPiasters, integerValue, yearValue,
-  rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned,
+  rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned, findDuplicateMatchedTargets,
 } from "./excel-import.js";
 
 test("normalizes Arabic spelling, diacritics, tatweel and separators", () => {
@@ -71,4 +71,18 @@ test("detects other storage locations in notes without treating selected locatio
     ["b", "c"],
   );
   assert.deepEqual(otherLocationsMentioned("موجود في العبور", locations, "a"), []);
+});
+
+test("blocks two matched rows targeting one product/location but allows different locations", () => {
+  const rows = [
+    { row_number: 2, normalized_json: JSON.stringify({ location_id: "loc-a", quantity: 4 }) },
+    { row_number: 3, normalized_json: JSON.stringify({ location_id: "loc-a", quantity: 7 }) },
+    { row_number: 4, normalized_json: JSON.stringify({ location_id: "loc-b", quantity: 2 }) },
+  ];
+  const sameTarget = new Map([[2, "match:product-1"], [3, "match:product-1"], [4, "match:product-1"]]);
+  assert.deepEqual(findDuplicateMatchedTargets(rows, sameTarget), [2, 3]);
+  const separateTargets = new Map([[2, "match:product-1"], [4, "match:product-1"]]);
+  assert.equal(findDuplicateMatchedTargets(rows, separateTargets), null);
+  const skipped = new Map([[2, "skip"], [3, "match:product-1"], [4, "match:product-1"]]);
+  assert.equal(findDuplicateMatchedTargets(rows, skipped), null);
 });
