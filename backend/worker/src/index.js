@@ -81,8 +81,28 @@ async function readJsonBody(request, maxBytes = 4096) {
   const type = request.headers.get("Content-Type") || "";
   if (!/^application\/json(?:\s*;|\s*$)/i.test(type)) return { error: "Content-Type must be application/json." };
   if (Number(request.headers.get("Content-Length") || 0) > maxBytes) return { error: "Request body is too large." };
-  const raw = await request.text();
-  if (new TextEncoder().encode(raw).byteLength > maxBytes) return { error: "Request body is too large." };
+  if (!request.body) return { error: "Request body is required." };
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return { error: "Request body is too large." };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  const raw = new TextDecoder().decode(bytes);
   try {
     const body = JSON.parse(raw);
     return body && typeof body === "object" && !Array.isArray(body) ? { body } : { error: "Invalid request body." };
