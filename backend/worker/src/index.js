@@ -33,6 +33,17 @@ button.secondary{background:#eee;color:#222}button:disabled{opacity:.5}
 .notice{padding:12px;border-radius:9px;background:#f5f0e6;margin-top:14px;white-space:pre-wrap}
 .hidden{display:none}.muted{font-size:13px;color:#777}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{text-align:right;padding:11px;border-bottom:1px solid #eee;font-size:14px}
 header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.brand{font-weight:bold;color:#8c2727}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin:14px 0}
+.metric{background:linear-gradient(145deg,#fff,#fffaf5);border:1px solid #e9e1d7;border-radius:14px;padding:17px;min-width:0}
+.metric span{display:block;color:#746d66;font-size:13px;margin-bottom:9px}.metric strong{display:block;font-size:23px;color:#292522;overflow-wrap:anywhere}
+.metric small{display:block;color:#8c2727;margin-top:6px;font-size:12px}
+.analytics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.analytics-grid .panel{margin:0;padding:18px}
+.bar-row{margin:13px 0}.bar-meta{display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:7px}.bar-track{height:9px;background:#eee8e1;border-radius:99px;overflow:hidden}.bar-fill{height:100%;background:#8c2727;border-radius:99px}
+.section-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.action-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.action-row button{margin-top:8px}
+@media(max-width:640px){main{margin:12px auto;padding:10px}.panel{padding:16px}th,td{font-size:12px;padding:8px}}
+
 </style></head><body><main>
 <header><div><div class="brand">بكار لقطع غيار السيارات</div><h1>إدارة المخزون</h1><p>هذه لوحة خاصة بالإدارة فقط. الموقع العام لا يحتاج إلى تسجيل دخول.</p></div><button id="logout" class="secondary hidden">تسجيل الخروج</button></header>
 <section id="login" class="panel"><h2>تسجيل دخول المالك</h2>
@@ -49,6 +60,15 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <p>إدارة المنتجات والأرصدة وحركة المخزون. أي تعديل هنا يُحفظ في قاعدة البيانات.</p>
 <div id="adminMsg" class="notice hidden"></div>
 <div id="duplicateReview" class="panel hidden"></div>
+<div class="section-head"><h3>نظرة عامة على المخزون</h3><span class="muted">مؤشرات مباشرة من قاعدة بيانات الموقع</span></div>
+<div id="analyticsCards" class="metric-grid"><div class="metric">جارٍ تحليل البيانات...</div></div>
+<div class="analytics-grid">
+ <section class="panel"><h3>توزيع المخزون حسب المكان</h3><div id="analyticsLocations" class="muted">جارٍ التحميل...</div></section>
+ <section class="panel"><h3>توزيع القطع حسب الماركة</h3><div id="analyticsBrands" class="muted">جارٍ التحميل...</div></section>
+ <section class="panel"><h3>حركة المخزون خلال آخر 30 يومًا</h3><div id="analyticsMovements" class="muted">جارٍ التحميل...</div></section>
+ <section class="panel"><h3>جودة البيانات</h3><div id="analyticsQuality" class="muted">جارٍ التحميل...</div></section>
+</div>
+<section class="panel"><h3>آخر عمليات استيراد Excel</h3><div id="analyticsImports" class="muted">جارٍ التحميل...</div></section>
 <h3>إضافة قطعة</h3>
 <form id="productForm" class="panel">
 <label>اسم القطعة بالعربي *</label><input id="partName" required maxlength="160">
@@ -76,8 +96,10 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <button type="submit">إضافة مكان تخزين</button>
 <div id="locations" class="muted"></div>
 </form>
-<h3>استيراد ملف Excel</h3>
+<h3>استيراد وتصدير Excel</h3>
 <section class="panel">
+<p>استورد ملف برنامج المخزن بعد مراجعة الصفوف، أو صدّر نسخة Excel محدثة من بيانات الموقع.</p>
+<div class="action-row"><button id="exportExcelBtn" type="button" class="secondary">تصدير المخزون إلى Excel</button><span id="exportExcelMsg" class="muted"></span></div>
 <p>ارفع ملف XLSX لمعاينة الصفوف أولًا. لن يتغير المخزون إلا بعد اختيار قرار لكل صف والضغط على اعتماد.</p>
 <input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
 <button id="previewExcelBtn" type="button">رفع الملف ومعاينة الصفوف</button>
@@ -237,7 +259,7 @@ $("applyExcelBtn").onclick=async()=>{
  }catch(e){importMessage(e.message)}finally{$("applyExcelBtn").disabled=false}
 };
 async function loadAdmin(){
- const [p,m,h]=await Promise.all([api("/api/admin/products"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12")]);
+ const [p,m,h,a]=await Promise.all([api("/api/admin/products"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12"),api("/api/admin/analytics")]);
  $("brandId").innerHTML='<option value="">اختر الماركة</option>'+m.brands.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name_ar)+'</option>').join("");
  $("movementProduct").innerHTML='<option value="">اختر القطعة</option>'+p.data.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.part_name_ar)+' — '+escapeHtml(x.condition||"الحالة غير محددة")+' — رصيد إجمالي: '+Number(x.total_quantity||0)+' — #'+escapeHtml(x.id.slice(0,8))+'</option>').join("");
  $("movementLocation").innerHTML='<option value="">اختر المخزن</option>'+m.locations.filter(x=>x.active).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join("");
