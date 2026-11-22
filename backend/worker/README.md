@@ -45,10 +45,10 @@ The code in this branch is not automatically proof of what is currently deployed
 | DELETE | `/api/admin/products/:id` | Owner session + same-origin | Archives a product; it does not hard-delete history |
 | GET | `/api/admin/meta` | Owner session | Lists brands, categories and storage locations |
 | POST | `/api/admin/locations` | Owner session + same-origin | Creates a storage location |
-| GET | `/api/admin/stock-movements` | Owner session | Reads stock movement history |
+| GET | `/api/admin/stock-movements` | Owner session | Reads stock movement history |\n| POST | `/api/admin/imports/preview` | Owner session + same-origin | Uploads and stages an XLSX preview; no inventory writes |\n| GET | `/api/admin/imports/:id` | Owner session | Reads a staged import batch and its row decisions |\n| POST | `/api/admin/imports/:id/apply` | Owner session + same-origin | Applies explicit per-row create/match/skip decisions |
 | POST | `/api/admin/stock-movements` | Owner session + same-origin | Records an inbound, outbound or adjustment movement |
 
-These routes are implemented on the `feature/inventory-management` branch only. They are not deployed. The existing admin dashboard still needs its product and stock-management interface wired to these routes.
+The product and stock-management routes are implemented on `feature/inventory-management` and deployed to the isolated test Worker. The owner has browser-verified the core login, product, stock movement, and duplicate-review flows. The Excel import routes are only on `feature/excel-import` and have not been deployed. Production remains unchanged.
 
 ## Deployment and test status
 
@@ -70,7 +70,7 @@ Do not put the owner email, bootstrap secret, password, session token or other c
 - Public output is allow-listed and excludes purchase prices, internal notes, exact inventory balances, staff records, import records and audit history.
 - SQL values use prepared statements. Errors returned to clients are generic; detailed failures are written to Worker logs.
 - CORS is restricted to the public Pages origin for the public catalog. CORS is not an authentication mechanism.
-- No admin write routes are enabled. Product creation, edits, imports and stock movements require separate reviewed endpoints with transactional audit logging.
+- Owner-only product, location and stock-movement write routes are present in the isolated test Worker and require a valid owner session plus same-origin requests. The staged Excel import routes exist only on `feature/excel-import`; they require explicit per-row approval and are not deployed. Production Pages, Worker and D1 remain unchanged.
 
 ## Local development
 
