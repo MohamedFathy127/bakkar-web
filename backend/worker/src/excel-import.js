@@ -247,14 +247,24 @@ async function handleExcelImport(request, url, env, session) {
     const batch = await env.DB.prepare("SELECT id,filename,status,total_rows,created_count,updated_count,skipped_count,error_count,created_at,applied_at FROM import_batches WHERE id=?")
       .bind(batchMatch[1]).first();
     if (!batch) return reply({ error: "دفعة الاستيراد غير موجودة." }, 404);
-    const rows = await env.DB.prepare("SELECT row_number,raw_json,normalized_json,issues_json,status,applied_product_id FROM import_batch_rows WHERE batch_id=? ORDER BY row_number")
-      .bind(batch.id).all();
+    const [rows, products] = await Promise.all([
+      env.DB.prepare("SELECT row_number,raw_json,normalized_json,issues_json,status,applied_product_id FROM import_batch_rows WHERE batch_id=? ORDER BY row_number")
+        .bind(batch.id).all(),
+      env.DB.prepare(`
+        SELECT p.id, p.part_name_ar, p.part_code, p.condition,
+          COALESCE(SUM(ib.quantity),0) AS total_quantity
+        FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
+        WHERE p.archived_at IS NULL
+        GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500
+      `).all(),
+    ]);
+    const cachedProducts = products.results || [];
     const mapped = await Promise.all((rows.results || []).map(async r => {
       const item = JSON.parse(r.normalized_json);
       return {
         row_number: r.row_number, raw: JSON.parse(r.raw_json), item,
         issues: JSON.parse(r.issues_json), status: r.status, product_id: r.applied_product_id,
-        candidates: r.status === "preview" ? await findCandidates(env.DB, item) : [],
+        candidates: r.status === "preview" ? await findCandidates(env.DB, item, cachedProducts) : [],
       };
     }));
     return reply({ batch, rows: mapped });
