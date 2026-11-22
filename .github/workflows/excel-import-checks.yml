@@ -1,0 +1,32 @@
+name: Excel import checks
+
+on:
+  push:
+    branches:
+      - feature/excel-import
+  pull_request:
+    branches:
+      - feature/inventory-management
+
+jobs:
+  worker-validation:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Worker dependencies
+        run: npm install --no-audit --no-fund
+      - name: Check JavaScript syntax
+        run: |
+          node --check src/index.js
+          node --check src/inventory.js
+          node --check src/excel-import.js
+      - name: Bundle against isolated test Worker config
+        run: npx wrangler deploy --dry-run --config wrangler.test.jsonc
