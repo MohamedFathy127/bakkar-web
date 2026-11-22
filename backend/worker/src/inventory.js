@@ -1,4 +1,5 @@
 // Owner-only inventory management routes for Bakkar.
+import { handleExcelImport } from "./excel-import.js";
 // All writes are same-origin, validated, versioned, and audit logged.
 
 const HEADERS = {
@@ -205,6 +206,9 @@ async function writeFitments(db, productId, fitments) {
 }
 
 async function handleInventoryAdmin(request, url, env, session) {
+  const importResponse = await handleExcelImport(request, url, env, session);
+  if (importResponse) return importResponse;
+
   const path = url.pathname;
   const method = request.method;
 
