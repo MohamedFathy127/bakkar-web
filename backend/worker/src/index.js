@@ -189,6 +189,12 @@ function egpToPiasters(id){const v=$(id).value;if(v==="")return null;const n=Num
 let currentImportBatchId=null,currentImportRows=[];
 function importMessage(value){$("excelImportMsg").textContent=value;$("excelImportMsg").classList.remove("hidden")}
 let renderedImportBatchId=null;
+function normalizeMatchText(value){
+ return String(value??"").normalize("NFKC").toLowerCase()
+  .replace(/[\\u064B-\\u065F\\u0670]/g,"")
+  .replace(/[أإآ]/g,"ا").replace(/ى/g,"ي")
+  .replace(/[\\s\\u200f\\u200e]+/g," ").trim();
+}
 function renderImportRows(rows,batch){
  const sameBatch=Boolean(batch?.id&&batch.id===renderedImportBatchId);
  const previousDecisions={};
@@ -201,6 +207,16 @@ function renderImportRows(rows,batch){
   const invalid=!item.part_name_ar||item.part_name_ar.length>160||(item.year_from!==null&&item.year_to!==null&&item.year_to<item.year_from);
   const needsReview=issues.length>0||candidates.length>0||invalid;
   const locked=exactDuplicate||invalid||r.status!=="preview";
+  const exactCandidate=candidates.length===1?candidates[0]:null;
+  const codeConsistent=!item.part_code||!exactCandidate?.part_code||normalizeMatchText(item.part_code)===normalizeMatchText(exactCandidate.part_code);
+  const fitmentConsistent=!item.model||(exactCandidate?.fitments||[]).some(f=>
+   normalizeMatchText(f.brand_name_ar)===normalizeMatchText(item.brand_raw)&&
+   normalizeMatchText(f.model)===normalizeMatchText(item.model)&&
+   (f.year_from??null)===(item.year_from??null)&&(f.year_to??null)===(item.year_to??null)
+  );
+  const exactSuggestion=exactCandidate&&normalizeMatchText(exactCandidate.part_name_ar)===normalizeMatchText(item.part_name_ar)&&
+   normalizeMatchText(exactCandidate.condition)===normalizeMatchText(item.condition)&&codeConsistent&&fitmentConsistent
+   ?"match:"+exactCandidate.id:"";
   const choices=locked?'<option value="skip">تخطي هذا الصف</option>':
    '<option value="">اختر قرارًا لهذا الصف</option><option value="create">إنشاء قطعة جديدة</option>'+
    candidates.map(candidate=>{
@@ -225,9 +241,10 @@ function renderImportRows(rows,batch){
    '<p>البيع: '+escapeHtml(item.sale_price_piasters==null?"غير محدد":(Number(item.sale_price_piasters)/100).toFixed(2)+" ج.م")+' | الشراء: '+escapeHtml(item.purchase_price_piasters==null?"غير محدد":(Number(item.purchase_price_piasters)/100).toFixed(2)+" ج.م")+' | الحالة: '+escapeHtml(item.condition||"—")+'</p>'+
    '<p>ملاحظات الملف: '+escapeHtml(item.notes||"لا توجد")+'</p>'+
    '<p>مراجعة: '+escapeHtml(warning)+' | الحالة: '+escapeHtml(state)+'</p>'+
-   (r.status==="preview"&&needsReview?'<label>مطلوب مراجعة — اختر القرار</label><select class="excel-decision" data-row="'+Number(r.row_number)+'">'+choices+'</select>':
+   (r.status==="preview"&&needsReview?'<label>مطلوب مراجعة — اختر القرار</label><select class="excel-decision" data-row="'+Number(r.row_number)+'" data-suggested="'+escapeHtml(exactSuggestion)+'">'+choices+'</select>':
     r.status==="preview"?'<p class="success">سليم — سيتم إدراجه تلقائيًا عند الاعتماد</p>':'')+editor+'</div>';
  }).join("");
+ document.querySelectorAll(".excel-decision").forEach(el=>{if(el.dataset.suggested)el.value=el.dataset.suggested});
  if(sameBatch)document.querySelectorAll(".excel-decision").forEach(el=>{const old=previousDecisions[el.dataset.row];if(old&&[...el.options].some(option=>option.value===old))el.value=old});
  renderedImportBatchId=batch?.id||null;
  document.querySelectorAll(".editExcelRowBtn").forEach(btn=>btn.onclick=()=>{
