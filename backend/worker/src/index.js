@@ -210,7 +210,7 @@ function renderImportRows(rows,batch){
   const exactCandidate=candidates.length===1?candidates[0]:null;
   const codeConsistent=!item.part_code||!exactCandidate?.part_code||normalizeMatchText(item.part_code)===normalizeMatchText(exactCandidate.part_code);
   const fitmentConsistent=!item.model||(exactCandidate?.fitments||[]).some(f=>
-   normalizeMatchText(f.brand_name_ar)===normalizeMatchText(item.brand_raw)&&
+   f.brand_id===item.brand_id&&
    normalizeMatchText(f.model)===normalizeMatchText(item.model)&&
    (f.year_from??null)===(item.year_from??null)&&(f.year_to??null)===(item.year_to??null)
   );
