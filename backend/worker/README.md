@@ -4,66 +4,80 @@ A separate Cloudflare Worker API for the Bakkar inventory system.
 
 ## Architecture
 
-- Cloudflare Pages continues to serve the existing public website.
+- Cloudflare Pages continues to serve the existing public website. Visitors do not need accounts or login.
 - This Worker is the API boundary; browser clients never connect directly to D1.
 - Cloudflare D1 is the source of truth for products, stock and audit history.
-- The public catalog reads only from the `public_catalog` projection's underlying approved fields. It never returns purchase prices, internal notes, exact stock balances or staff records.
-- Admin endpoints fail closed. They require a valid Cloudflare Access JWT and an active email in `staff_accounts`.
+- The public catalog reads only approved public fields. It never returns purchase prices, internal notes, exact stock balances or staff records.
+- The private administration interface is served at `/admin` on this Worker hostname. Only the owner signs in there; the public Pages website remains unchanged.
+- Admin sessions use random opaque tokens stored as SHA-256 hashes in D1 and an HttpOnly, Secure, SameSite=Strict cookie scoped to `/api/admin`. Passwords are salted and derived with PBKDF2-HMAC-SHA256 using 210,000 iterations. Cloudflare Access is not required.
 
-## Deployment status\n\nThe Worker is deployed separately from Pages and is available at:\n\n- `https://bakkar-inventory-api.mohamedfathy12127.workers.dev`\n- Health: `/api/health`\n- Public catalog: `/api/catalog`\n\nThe `workers.dev` endpoint is enabled for API testing. It does not change the existing Pages website or its production branch.\n\n## Current routes
+## Deployment status
+
+The Worker is separately deployed at:
+
+- `https://bakkar-inventory-api.mohamedfathy12127.workers.dev`
+- Health: `/api/health`
+- Public catalog: `/api/catalog`
+- Private admin: `/admin`
+
+The code in this branch is not automatically proof of what is currently deployed. Do not deploy it until the migration and secrets are configured and the owner approves deployment.
+
+## Current routes
 
 | Method | Route | Access | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/health` | Public | Checks API-to-D1 connectivity |
 | GET | `/api/catalog` | Public | Approved public catalog with bounded results and cursor pagination |
-| GET | `/api/admin/me` | Cloudflare Access + staff allow-list | Returns the authenticated staff identity and role |
-| GET | `/api/admin/products` | Cloudflare Access + staff allow-list | Lists internal products and total stock |
+| GET | `/admin` | Public page; data requires sign-in | Standalone owner login and admin dashboard |
+| GET | `/api/admin/status` | Public, setup state only | Indicates whether initial owner setup is needed |
+| POST | `/api/admin/setup` | Same-origin + bootstrap secret | Creates the first owner once |
+| POST | `/api/admin/login` | Same-origin | Authenticates the owner and creates a session |
+| POST | `/api/admin/logout` | Authenticated browser session + same-origin | Revokes the current session |
+| GET | `/api/admin/me` | Owner session | Returns the signed-in identity |
+| GET | `/api/admin/products` | Owner session | Lists internal products and total stock |
 
-Admin routes intentionally return 503 until Access configuration is supplied, 401 for missing/invalid Access identity, and 403 when the verified email is not allow-listed.
+No product-write or stock-movement routes are enabled yet. The dashboard is deliberately read-only at this stage.
 
-## Required admin configuration (not yet set)
+## Required setup (not yet performed)
 
-Set these as Worker secrets/variables only after creating a Cloudflare Access self-hosted application for the API hostname:
+1. Review and apply `backend/migrations/0002_admin_auth.sql` to the existing `bakkar-inventory` D1 database exactly once. Do not rerun it after successful application.
+2. Configure Worker secrets/variables in the Cloudflare dashboard:
+   - `OWNER_EMAIL`: the exact owner email approved for the initial account.
+   - `BOOTSTRAP_SECRET`: a long, random, one-time setup secret (at least 32 random characters). Store it as a Worker secret, never in Git.
+3. Deploy this branch only after explicit approval and after confirming the existing production Worker will not be overwritten unexpectedly.
+4. Visit `https://bakkar-inventory-api.mohamedfathy12127.workers.dev/admin`, initialize the owner once, then remove the `BOOTSTRAP_SECRET` secret from Worker settings. The owner account cannot be initialized a second time through this endpoint.
+5. Test login, wrong-password behavior, logout, expiry and anonymous public catalog access.
 
-- `ACCESS_TEAM_DOMAIN`: Access team hostname, e.g. `your-team.cloudflareaccess.com` (no scheme).
-- `ACCESS_AUD`: the Access application's audience tag.
+Do not put the owner email, bootstrap secret, password, session token or other credentials in this repository. Never ask the user to paste secrets into chat.
 
-Do not put tokens, private keys or credentials in this repository. Add authorized staff emails to `staff_accounts` only after confirming the exact email and role with the owner.
+## Security notes and limitations
+
+- Admin cookies are scoped to this Worker hostname, so the administration UI is served from the same origin. The public Pages site does not share or require this session.
+- State-changing authentication requests require a same-origin Origin header. The session cookie is HttpOnly, Secure and SameSite=Strict.
+- Login attempts are throttled per email and client IP hash (five failed attempts per 15-minute window). This D1-backed limit is a basic safeguard, not a substitute for a managed rate-limiting service against a distributed attack.
+- Password hashes use PBKDF2-HMAC-SHA256 with a unique random salt. Passwords are never stored in plaintext.
+- Sessions expire after eight hours; logout deletes the server-side session.
+- Public output is allow-listed and excludes purchase prices, internal notes, exact inventory balances, staff records, import records and audit history.
+- SQL values use prepared statements. Errors returned to clients are generic; detailed failures are written to Worker logs.
+- CORS is restricted to the public Pages origin for the public catalog. CORS is not an authentication mechanism.
+- No admin write routes are enabled. Product creation, edits, imports and stock movements require separate reviewed endpoints with transactional audit logging.
 
 ## Local development
 
 Install a current Node.js LTS and Wrangler, then run from this directory:
 
 ```bash
-npm install --save-dev wrangler
+npm install
 npx wrangler dev
 ```
 
-The local D1 binding is local by default. Do not enable remote D1 access for routine development. Use synthetic test data.
-
-## Deployment
-
-```bash
-npx wrangler deploy
-```
-
-The repository config binds the existing D1 database. Do not run migrations from this directory unless a reviewed migration file is intentionally added.
-
-## Security notes
-
-- SQL values are passed through prepared statements; user input is never concatenated into SQL syntax.
-- Public output is explicitly allow-listed and does not expose internal stock or purchase data.
-- Admin identity is verified cryptographically (RS256, issuer, audience, expiry and key ID) against Cloudflare Access signing keys, then checked against the database allow-list.
-- No admin write routes are enabled yet. Product creation and stock changes will be added with transactional audit logging and tested against synthetic data before importing the real workbook.
-- Errors returned to clients are generic; detailed failures are written as structured Worker logs.
-- CORS allows only the configured website origin. CORS is not an authentication mechanism.
+Use synthetic test data locally. Do not point local development at production D1 for routine testing.
 
 ## Learning notes
 
 - **Worker**: the server-side program that receives HTTP requests and talks to D1.
-- **Binding**: a secure connection supplied by Cloudflare between this Worker and D1.
 - **D1**: the managed SQL database and source of truth.
-- **JWT**: a signed identity token. The Worker verifies its signature and claims; it does not trust a user-supplied email header.
-- **Allow-list**: the explicit set of staff accounts allowed to use the admin API.
+- **Session cookie**: a browser-held random token that is HttpOnly; only its hash is stored in D1.
+- **PBKDF2**: a password-based key derivation function that makes offline guessing more expensive.
+- **Bootstrap secret**: a temporary secret used only once to create the first owner account.
 - **Prepared statement**: SQL with placeholders, keeping user input separate from SQL code.
-- **Cursor pagination**: returns a bounded page and a pointer to the next page instead of loading every record at once.
