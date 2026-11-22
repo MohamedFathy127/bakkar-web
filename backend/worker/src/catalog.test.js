@@ -59,6 +59,7 @@ test("public catalog filters through the public projection, pages, and returns o
   assert.equal("internal_notes" in body.data[0], false);
   assert.equal("quantity" in body.data[0], false);
   assert.match(db.calls[0].sql, /FROM public_catalog/);
+  assert.match(db.calls[0].sql, /sale_price_piasters IS NOT NULL/);
   assert.doesNotMatch(db.calls[0].sql, /SELECT\s+(?:p\.\*|purchase_price_piasters|internal_notes)/i);
   assert.ok(db.calls[0].values.includes("%R-1%"));
 });
