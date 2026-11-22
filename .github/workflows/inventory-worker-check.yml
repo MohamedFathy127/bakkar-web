@@ -24,3 +24,6 @@ jobs:
         run: |
           node --check backend/worker/src/index.js
           node --check backend/worker/src/inventory.js
+      - name: Validate test Worker bundle and configuration
+        working-directory: backend/worker
+        run: npx --yes wrangler@4 deploy --dry-run --config wrangler.test.jsonc
