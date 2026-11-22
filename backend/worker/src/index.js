@@ -509,23 +509,22 @@ async function handleAdmin(request, url, env) {
         WHERE p.archived_at IS NULL
       `).first(),
       env.DB.prepare(`
-        SELECT l.id,l.name,COUNT(DISTINCT ib.product_id) AS product_count,
-          COALESCE(SUM(ib.quantity),0) AS total_units
+        SELECT l.id,l.name,COUNT(DISTINCT p.id) AS product_count,
+          COALESCE(SUM(CASE WHEN p.id IS NOT NULL THEN ib.quantity ELSE 0 END),0) AS total_units
         FROM locations l LEFT JOIN inventory_balances ib ON ib.location_id=l.id
         LEFT JOIN products p ON p.id=ib.product_id AND p.archived_at IS NULL
         WHERE l.active=1 GROUP BY l.id,l.name ORDER BY total_units DESC,l.name
       `).all(),
       env.DB.prepare(`
-        SELECT b.id,b.name_ar,COUNT(DISTINCT f.product_id) AS product_count,
+        SELECT b.id,b.name_ar,COUNT(q.product_id) AS product_count,
           COALESCE(SUM(q.total_quantity),0) AS total_units
         FROM brands b
         LEFT JOIN (
-          SELECT DISTINCT f.brand_id,p.id,
+          SELECT DISTINCT f.brand_id,p.id AS product_id,
             COALESCE((SELECT SUM(ib.quantity) FROM inventory_balances ib WHERE ib.product_id=p.id),0) AS total_quantity
           FROM product_fitments f JOIN products p ON p.id=f.product_id
           WHERE p.archived_at IS NULL
         ) q ON q.brand_id=b.id
-        LEFT JOIN product_fitments f ON f.brand_id=b.id AND f.product_id=q.id
         GROUP BY b.id,b.name_ar ORDER BY product_count DESC,b.name_ar
       `).all(),
       env.DB.prepare(`
