@@ -31,7 +31,7 @@ test("catalog filters trim and bound user input and reject invalid years", () =>
 test("catalog cursors are encoded for a specific sort and reject invalid data", () => {
   const cursor = encodeCursor({ sort: "name", name: "مساعد", id: "product-1" });
   assert.deepEqual(decodeCursor(cursor, "name"), { sort: "name", name: "مساعد", id: "product-1" });
-  assert.equal(decodeCursor(cursor, "name"), undefined);
+  assert.equal(decodeCursor(cursor, "id"), undefined);
   assert.equal(decodeCursor("not/a/cursor", "id"), undefined);
 });
 
