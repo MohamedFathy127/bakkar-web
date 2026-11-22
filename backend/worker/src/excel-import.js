@@ -5,7 +5,7 @@ const JSON_HEADERS = {
 };
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 15 * 1024 * 1024;
-const MAX_ROWS = 500;
+const MAX_ROWS = 100;
 const HEADERS = [
   "الماركة", "اسم القطعة", "موديل السيارة", "من سنة", "إلى سنة",
   "الكمية", "سعر البيع (ج.م)", "سعر الشراء (ج.م)", "الحالة",
