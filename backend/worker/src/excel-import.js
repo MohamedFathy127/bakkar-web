@@ -348,18 +348,19 @@ async function handleExcelImport(request, url, env, session) {
       typeof cell === "string" ? cell.normalize("NFKC").trim() : cell
     ));
     const hash = await sha256Hex(new TextEncoder().encode(JSON.stringify(canonicalRows)));
-    const existingBatch = await env.DB.prepare("SELECT id,status,filename FROM import_batches WHERE file_sha256=? LIMIT 1").bind(hash).first();
-    if (existingBatch) {
-      return reply({ error: "تم رفع هذا الملف من قبل. استخدم المعاينة الموجودة بدل إعادة استيراده.", existing_batch: existingBatch }, 409);
+    const existingBatch = await env.DB.prepare("SELECT id,status,filename,created_at FROM import_batches WHERE content_sha256=? ORDER BY created_at DESC LIMIT 1").bind(hash).first();
+    if (existingBatch?.status === "preview") {
+      return reply({ error: "يوجد بالفعل ملف مطابق بانتظار المراجعة. تم فتح المعاينة المحفوظة بدل إنشاء دفعة مكررة.", existing_batch: existingBatch }, 409);
     }
     const rows = await parseRows(env.DB, sheetRows);
     if (!rows.length) return reply({ error: "لم يتم العثور على صفوف بيانات." }, 400);
     const batchId = crypto.randomUUID();
+    const uniqueFileHash = hash + ":" + batchId;
     const now = new Date().toISOString();
     try {
       const statements = [
-        env.DB.prepare("INSERT INTO import_batches(id,filename,file_sha256,status,total_rows,created_by,created_at) VALUES(?,?,?,'preview',?,?,?)")
-          .bind(batchId, filename, hash, rows.length, session.email, now),
+        env.DB.prepare("INSERT INTO import_batches(id,filename,file_sha256,content_sha256,status,total_rows,created_by,created_at) VALUES(?,?,?,?,'preview',?,?,?)")
+          .bind(batchId, filename, uniqueFileHash, hash, rows.length, session.email, now),
         ...rows.map(row => env.DB.prepare(`
           INSERT INTO import_batch_rows(id,batch_id,row_number,raw_json,normalized_json,issues_json,status,created_at)
           VALUES(?,?,?,?,?,?,'preview',?)
@@ -368,13 +369,14 @@ async function handleExcelImport(request, url, env, session) {
       // One D1 transaction: a failed staging write leaves no half-created batch.
       await env.DB.batch(statements);
     } catch (error) {
-      const existing = await env.DB.prepare("SELECT id,status,filename FROM import_batches WHERE file_sha256=? LIMIT 1").bind(hash).first();
+      const existing = await env.DB.prepare("SELECT id,status,filename FROM import_batches WHERE content_sha256=? ORDER BY created_at DESC LIMIT 1").bind(hash).first();
       if (existing) return reply({ error: "تم رفع هذا الملف من قبل. استخدم المعاينة الموجودة بدل إعادة استيراده.", existing_batch: existing }, 409);
       console.error("excel_import_stage_failed", String(error?.message || error));
       return reply({ error: "تعذر حفظ معاينة الاستيراد." }, 500);
     }
     return reply({
       batch_id: batchId, filename, total_rows: rows.length,
+      previous_import: existingBatch ? { id: existingBatch.id, filename: existingBatch.filename, status: existingBatch.status, created_at: existingBatch.created_at } : null,
       warning_rows: rows.filter(r => r.issues.length).length,
       duplicate_rows: rows.filter(r => r.candidates.length).length,
       rows: rows.map(r => ({ row_number: r.row_number, item: r.item, issues: r.issues, candidates: r.candidates })),
