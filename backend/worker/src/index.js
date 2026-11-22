@@ -105,7 +105,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <div><label>إلى سنة</label><input id="yearTo" type="number" min="1900" max="2100"></div>
 </div>
 <label>حالة التوافق</label><select id="fitmentStatus"><option value="pending">يحتاج تأكيد</option><option value="confirmed">مؤكد</option><option value="unconfirmed">غير مؤكد</option></select>
-<label><input id="isPublic" type="checkbox" style="width:auto"> إظهار القطعة في الموقع العام (يتطلب توافقًا مؤكدًا)</label>
+<label><input id="isPublic" type="checkbox" style="width:auto"> إظهار القطعة في الموقع العام (يتطلب سعر بيع وتوافقًا مؤكدًا)</label>
 <button id="saveProductBtn" type="submit">حفظ القطعة</button><button id="cancelEditBtn" class="secondary hidden" type="button">إلغاء التعديل</button>
 </form>
 <h3>المخازن</h3>
@@ -158,6 +158,7 @@ function buildProductPayload(){
  }
  const sale=egpToPiasters("salePrice"),purchase=egpToPiasters("purchasePrice");
  if(sale===undefined||purchase===undefined)throw Error("راجع الأسعار.");
+ if($("isPublic").checked&&sale===null)throw Error("لا يمكن نشر القطعة قبل إضافة سعر البيع. يمكنك حفظها كقطعة خاصة ثم إضافة السعر لاحقًا.");
  const payload={part_name_ar:$("partName").value,part_name_en:$("partNameEn").value,part_code:$("partCode").value,condition:$("condition").value,sale_price_piasters:sale,purchase_price_piasters:purchase,fitments,is_public:$("isPublic").checked,category_id:editingCategoryId,aliases:editingAliases,internal_notes:editingNotes};
  if(editingProductId)payload.version=editingVersion;
  return payload;
