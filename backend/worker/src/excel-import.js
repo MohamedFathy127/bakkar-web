@@ -53,58 +53,6 @@ function normalize(value) {
     .replace(/[أإآ]/g, "ا").replace(/ى/g, "ي")
     .replace(/[ـ\s\-_/.,،؛:()[\]{}]+/g, "");
 }
-function editSimilarity(left, right) {
-  if (left === right) return 1;
-  if (!left || !right) return 0;
-  const a = [...left], b = [...right];
-  if (Math.abs(a.length - b.length) > Math.max(2, Math.ceil(Math.max(a.length, b.length) * 0.35))) return 0;
-  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const current = [i];
-    for (let j = 1; j <= b.length; j++) {
-      current[j] = Math.min(
-        current[j - 1] + 1,
-        previous[j] + 1,
-        previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
-      );
-    }
-    previous = current;
-  }
-  return 1 - previous[b.length] / Math.max(a.length, b.length);
-}
-function matchExcelHeaders(inputHeaders) {
-  const actual = inputHeaders.map(value => normalize(value));
-  const expected = HEADERS.map(value => normalize(value));
-  const candidates = [];
-  for (let expectedIndex = 0; expectedIndex < expected.length; expectedIndex++) {
-    for (let actualIndex = 0; actualIndex < actual.length; actualIndex++) {
-      if (!actual[actualIndex]) continue;
-      const left = expected[expectedIndex], right = actual[actualIndex];
-      const similarity = editSimilarity(left, right);
-      const contains = left.length >= 5 && right.length >= 5 && (left.includes(right) || right.includes(left));
-      const score = left === right ? 1 : Math.max(similarity, contains ? 0.84 : 0);
-      if (score >= 0.72) candidates.push({ expectedIndex, actualIndex, score });
-    }
-  }
-  candidates.sort((a, b) => b.score - a.score);
-  const mapping = Array(HEADERS.length).fill(-1);
-  const used = new Set();
-  for (const candidate of candidates) {
-    if (mapping[candidate.expectedIndex] !== -1 || used.has(candidate.actualIndex)) continue;
-    mapping[candidate.expectedIndex] = candidate.actualIndex;
-    used.add(candidate.actualIndex);
-  }
-  const missing = HEADERS.filter((_, index) => mapping[index] === -1);
-  const extra = actual.map((value, index) => ({ value, index }))
-    .filter(entry => entry.value && !used.has(entry.index));
-  return { mapping, missing, extra, scores: mapping.map((actualIndex, expectedIndex) => ({
-    expected: HEADERS[expectedIndex],
-    actual: actualIndex >= 0 ? String(inputHeaders[actualIndex] ?? "") : null,
-    confidence: actualIndex >= 0
-      ? candidates.find(candidate => candidate.expectedIndex === expectedIndex && candidate.actualIndex === actualIndex)?.score ?? 0
-      : 0,
-  })) };
-}
 function textValue(value) {
   if (value === null || value === undefined) return null;
   if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return null;
@@ -389,25 +337,14 @@ async function handleExcelImport(request, url, env, session) {
     if (sheetRows.some(row => !Array.isArray(row) || row.some(cell =>
       cell !== null && cell !== undefined && !["string", "number", "boolean"].includes(typeof cell)
     ))) return reply({ error: "بنية صفوف Excel غير صالحة. أعد حفظ الملف بصيغة XLSX وحاول مرة أخرى." }, 400);
-    const headerMatch = matchExcelHeaders(sheetRows[0] || []);
-    const extraData = headerMatch.extra.some(entry =>
-      sheetRows.slice(1).some(row => textValue((row || [])[entry.index]) !== null)
-    );
-    if (headerMatch.missing.length || extraData) return reply({
-      error: "تعذر التعرف على بعض أعمدة Excel بدرجة ثقة كافية. عدّل أسماء الأعمدة أو استخدم قالب بكار.",
-      expected_headers: HEADERS,
-      actual_headers: sheetRows[0] || [],
-      missing_headers: headerMatch.missing,
-      suggestions: headerMatch.scores,
-      unmatched_headers: headerMatch.extra.map(entry => sheetRows[0][entry.index]),
-    }, 400);
-    // Reorder recognized columns into the canonical Bakkar schema before parsing.
-    const normalizedSheetRows = [
-      HEADERS,
-      ...sheetRows.slice(1).map(row => headerMatch.mapping.map(index => row[index] ?? null)),
-    ];
+    const actualHeaders = (sheetRows[0] || []).map(x => normalize(x));
+    const expectedHeaders = HEADERS.map(normalize);
+    const missing = HEADERS.filter((header, i) => actualHeaders[i] !== expectedHeaders[i]);
+    const extraHeaders = actualHeaders.slice(HEADERS.length).some(value => value !== "");
+    const extraData = sheetRows.slice(1).some(row => (row || []).slice(HEADERS.length).some(value => textValue(value) !== null));
+    if (missing.length || extraHeaders || extraData) return reply({ error: "عناوين الأعمدة أو بياناتها لا تطابق قالب بكار المكوّن من 12 عمودًا.", expected_headers: HEADERS, actual_headers: sheetRows[0] || [] }, 400);
     // Hash and reject duplicate batches before running product-candidate lookups.
-    const canonicalRows = normalizedSheetRows.map(row => row.map(cell =>
+    const canonicalRows = sheetRows.map(row => row.map(cell =>
       typeof cell === "string" ? cell.normalize("NFKC").trim() : cell
     ));
     const hash = await sha256Hex(new TextEncoder().encode(JSON.stringify(canonicalRows)));
@@ -415,7 +352,7 @@ async function handleExcelImport(request, url, env, session) {
     if (existingBatch?.status === "preview") {
       return reply({ error: "يوجد بالفعل ملف مطابق بانتظار المراجعة. تم فتح المعاينة المحفوظة بدل إنشاء دفعة مكررة.", existing_batch: existingBatch }, 409);
     }
-    const rows = await parseRows(env.DB, normalizedSheetRows);
+    const rows = await parseRows(env.DB, sheetRows);
     if (!rows.length) return reply({ error: "لم يتم العثور على صفوف بيانات." }, 400);
     const batchId = crypto.randomUUID();
     const uniqueFileHash = hash + ":" + batchId;
