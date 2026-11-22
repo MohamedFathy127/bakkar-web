@@ -1,4 +1,5 @@
 import { handleInventoryAdmin } from "./inventory.js";
+import { handleExcelImport } from "./excel-import.js";
 
 /**
  * Bakkar Inventory API
@@ -477,6 +478,8 @@ async function handleAdmin(request, url, env) {
     `).bind(limit).all();
     return json({ data: result.results || [] });
   }
+  const importResponse = await handleExcelImport(request, url, env, session);
+  if (importResponse) return importResponse;
   const inventoryResponse = await handleInventoryAdmin(request, url, env, session);
   if (inventoryResponse) return inventoryResponse;
   return json({ error: "Route not found." }, 404);
