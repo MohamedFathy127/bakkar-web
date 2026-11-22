@@ -24,7 +24,9 @@ const ADMIN_HTML = `<!doctype html>
 *{box-sizing:border-box}body{margin:0;background:#f5f3ef;color:#242424;font-family:Tahoma,Arial,sans-serif}
 main{max-width:980px;margin:48px auto;padding:20px}.panel{background:#fff;border:1px solid #e5e0d8;border-radius:16px;padding:24px;margin:16px 0;box-shadow:0 8px 28px #00000008}
 h1{font-size:25px;margin:0 0 8px}p{color:#666;line-height:1.7}label{display:block;margin:14px 0 6px;font-size:14px}
-input{width:100%;padding:13px;border:1px solid #d7d1c8;border-radius:9px;font:inherit}
+input,select{width:100%;padding:13px;border:1px solid #d7d1c8;border-radius:9px;font:inherit;background:#fff}
+.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.panel .panel{box-shadow:none;background:#fffdfa}
 button{border:0;border-radius:9px;background:#292929;color:white;padding:12px 20px;font:inherit;cursor:pointer;margin-top:16px}
 button.secondary{background:#eee;color:#222}button:disabled{opacity:.5}
 .notice{padding:12px;border-radius:9px;background:#f5f0e6;margin-top:14px;white-space:pre-wrap}
@@ -318,7 +320,7 @@ async function handleAdmin(request, url, env) {
     const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 50;
     const result = await env.DB.prepare(`
       SELECT p.id,p.part_name_ar,p.part_name_en,p.condition,p.part_code,p.sale_price_piasters,
-        p.purchase_price_piasters,p.is_public,p.created_at,p.updated_at,COALESCE(SUM(ib.quantity),0) AS total_quantity
+        p.purchase_price_piasters,p.is_public,p.version,p.created_at,p.updated_at,COALESCE(SUM(ib.quantity),0) AS total_quantity
       FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
       WHERE p.archived_at IS NULL GROUP BY p.id ORDER BY p.updated_at DESC,p.id ASC LIMIT ?
     `).bind(limit).all();
