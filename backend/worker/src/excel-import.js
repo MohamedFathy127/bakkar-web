@@ -407,9 +407,12 @@ async function handleExcelImport(request, url, env, session) {
     }
     const batchId = rowEditMatch[1];
     const rowNumber = Number(rowEditMatch[2]);
-    const batch = await env.DB.prepare("SELECT id,status FROM import_batches WHERE id=?").bind(batchId).first();
+    const batch = await env.DB.prepare("SELECT id,status,apply_token,apply_lock_expires_at FROM import_batches WHERE id=?").bind(batchId).first();
     if (!batch) return reply({ error: "دفعة الاستيراد غير موجودة." }, 404);
     if (batch.status !== "preview") return reply({ error: "لا يمكن تعديل صف بعد اعتماد الدفعة." }, 409);
+    if (batch.apply_token && batch.apply_lock_expires_at && batch.apply_lock_expires_at > new Date().toISOString()) {
+      return reply({ error: "لا يمكن تعديل الصف أثناء تنفيذ دفعة الاستيراد." }, 409);
+    }
     const existing = await env.DB.prepare("SELECT id,raw_json,status FROM import_batch_rows WHERE batch_id=? AND row_number=?")
       .bind(batchId,rowNumber).first();
     if (!existing) return reply({ error: "صف الاستيراد غير موجود." }, 404);
