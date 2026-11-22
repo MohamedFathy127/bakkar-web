@@ -171,9 +171,9 @@ async function handleExcelImport(request, url, env, session) {
     }
     const parsed = await readJsonBody(request, MAX_FILE_BYTES + 64 * 1024);
     if (parsed.error) return reply({ error: parsed.error }, 400);
-    const filename = String(parsed.body.filename || "inventory.xlsx").replace(/[\\/\\0-\\x1f]/g, "_").slice(0, 120);
+    const filename = String(parsed.body.filename || "inventory.xlsx").slice(-120);
     const sheetRows = parsed.body.rows;
-    if (!/\\.xlsx$/i.test(filename)) return reply({ error: "النسخة الحالية تقبل ملفات Excel بصيغة .xlsx فقط." }, 400);
+    if (!filename.toLowerCase().endsWith(".xlsx")) return reply({ error: "النسخة الحالية تقبل ملفات Excel بصيغة .xlsx فقط." }, 400);
     if (!Array.isArray(sheetRows) || !sheetRows.length) return reply({ error: "ورقة العمل فارغة أو بياناتها غير صالحة." }, 400);
     if (sheetRows.length - 1 > MAX_ROWS) return reply({ error: "الملف يتجاوز الحد الأقصى وهو 500 صف." }, 413);
     const actualHeaders = (sheetRows[0] || []).map(x => normalize(x));
