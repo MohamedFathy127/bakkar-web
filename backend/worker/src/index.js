@@ -175,7 +175,7 @@ function renderImportRows(rows,batch){
    '<option value="">اختر قرارًا لهذا الصف</option><option value="create">إنشاء قطعة جديدة</option>'+
    candidates.map(c=>{
     const fitments=(c.fitments||[]).map(f=>[f.brand_name_ar,f.model,f.year_from??"؟",f.year_to??"؟"].join(" / ")).join("، ")||"لا يوجد توافق مسجل";
-    return '<option value="match:'+escapeHtml(c.id)+'">مطابقة: '+escapeHtml(c.part_name_ar)+' — '+escapeHtml(c.condition||"الحالة غير محددة")+' — '+escapeHtml(fitments)+' — رصيد '+Number(c.total_quantity||0)+'</option>';
+    return '<option value="match:'+escapeHtml(c.id)+'">مطابقة وتحديث: '+escapeHtml(c.part_name_ar)+' — '+escapeHtml(c.condition||"الحالة غير محددة")+' — بيع '+(c.sale_price_piasters==null?"—":(Number(c.sale_price_piasters)/100).toFixed(2))+' ج.م — شراء '+(c.purchase_price_piasters==null?"—":(Number(c.purchase_price_piasters)/100).toFixed(2))+' ج.م — '+escapeHtml(fitments)+' — رصيد '+Number(c.total_quantity||0)+'</option>';
    }).join("")+
    '<option value="skip">تخطي هذا الصف</option>';
   const warning=issues.length?issues.join(" • "):"لا توجد تحذيرات";
@@ -228,7 +228,7 @@ $("applyExcelBtn").onclick=async()=>{
    if(!select.value)throw Error("راجع الصف واختر قرارًا له. الصف "+r.row_number);
    decisions[String(r.row_number)]=select.value;
   }
-  if(!confirm("هل راجعت كل الصفوف وتريد تنفيذ القرارات؟ سيتم تحديث أرصدة المخازن حسب الكميات المحددة في الملف."))return;
+  if(!confirm("هل راجعت كل الصفوف وتريد تنفيذ القرارات؟\n\nعند مطابقة قطعة موجودة: سيتم تحديث الحقول غير الفارغة من ملف Excel (الاسم والحالة والكود والأسعار والملاحظات)، مع الاحتفاظ بالقيم القديمة في الخانات الفارغة. الصفر قيمة فعلية.\n\nالكمية في الملف ستصبح الرصيد المستهدف للمخزن المحدد، وليست كمية تضاف فوق الرصيد الحالي. توافقات السيارات الجديدة ستظل بحاجة إلى تأكيد."))return;
   $("applyExcelBtn").disabled=true;
   const result=await api("/api/admin/imports/"+encodeURIComponent(currentImportBatchId)+"/apply",{method:"POST",body:JSON.stringify({decisions})});
   const locations=(result.report?.by_location||[]).map(x=>x.location_name+": "+x.product_count+" أصناف / "+x.total_quantity+" قطعة").join("؛ ")||"لا توجد أرصدة مسجلة";
