@@ -5,7 +5,7 @@ const RESPONSE_HEADERS = {
   "cache-control": "no-store",
 };
 
-const SORTS = new Set(["id", "name", "price_asc", "price_desc"]);
+const SORTS = new Set(["id", "name"]);
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: RESPONSE_HEADERS });
@@ -36,10 +36,6 @@ function decodeCursor(value, sort) {
     const cursor = JSON.parse(new TextDecoder().decode(bytes));
     if (!cursor || cursor.sort !== sort || typeof cursor.id !== "string" || !cursor.id || cursor.id.length > 64) return undefined;
     if (sort === "name" && typeof cursor.name !== "string") return undefined;
-    if (sort === "price_asc" || sort === "price_desc") {
-      if (![0, 1].includes(cursor.priceIsNull)) return undefined;
-      if (cursor.priceIsNull === 0 && !Number.isSafeInteger(cursor.price)) return undefined;
-    }
     return cursor;
   } catch {
     return undefined;
@@ -49,21 +45,11 @@ function decodeCursor(value, sort) {
 function cursorForRow(sort, row) {
   const id = String(row.product_id || row.id || "");
   if (sort === "name") return encodeCursor({ sort, name: row.name, id });
-  if (sort === "price_asc" || sort === "price_desc") {
-    return encodeCursor({
-      sort,
-      priceIsNull: row.sale_price_piasters == null ? 1 : 0,
-      price: row.sale_price_piasters == null ? null : Number(row.sale_price_piasters),
-      id,
-    });
-  }
   return encodeCursor({ sort: "id", id });
 }
 
 function orderBy(sort) {
   if (sort === "name") return "name COLLATE NOCASE ASC, product_id ASC";
-  if (sort === "price_asc") return "price_is_null ASC, sale_price_piasters ASC, product_id ASC";
-  if (sort === "price_desc") return "price_is_null ASC, sale_price_piasters DESC, product_id ASC";
   return "product_id ASC";
 }
 
@@ -73,14 +59,6 @@ function cursorClause(sort, cursor) {
     return {
       sql: "WHERE (name COLLATE NOCASE > ? OR (name COLLATE NOCASE = ? AND product_id > ?))",
       values: [cursor.name, cursor.name, cursor.id],
-    };
-  }
-  if (sort === "price_asc" || sort === "price_desc") {
-    if (cursor.priceIsNull === 1) return { sql: "WHERE (price_is_null > 1 OR (price_is_null = 1 AND product_id > ?))", values: [cursor.id] };
-    const comparison = sort === "price_asc" ? ">" : "<";
-    return {
-      sql: `WHERE (price_is_null > 0 OR (price_is_null = 0 AND (sale_price_piasters ${comparison} ? OR (sale_price_piasters = ? AND product_id > ?))))`,
-      values: [cursor.price, cursor.price, cursor.id],
     };
   }
   return { sql: "WHERE product_id > ?", values: [cursor.id] };
@@ -136,9 +114,7 @@ async function handlePublicCatalog(url, env) {
         MAX(pc.part_name_en) AS name_en,
         MAX(pc.condition) AS condition,
         MAX(pc.part_code) AS part_code,
-        MAX(pc.sale_price_piasters) AS sale_price_piasters,
-        MAX(pc.category_name_ar) AS category,
-        CASE WHEN MAX(pc.sale_price_piasters) IS NULL THEN 1 ELSE 0 END AS price_is_null
+        MAX(pc.category_name_ar) AS category
       FROM public_catalog pc
       JOIN matching_products matched ON matched.product_id = pc.product_id
       GROUP BY pc.product_id
@@ -147,7 +123,7 @@ async function handlePublicCatalog(url, env) {
       ORDER BY ${orderBy(sort)} LIMIT ?
     )
     SELECT page.product_id AS id, page.name, page.name_en, page.condition, page.part_code,
-      page.sale_price_piasters, page.category,
+      page.category,
       (SELECT CASE WHEN EXISTS (
         SELECT 1 FROM inventory_balances ib
         WHERE ib.product_id=page.product_id AND ib.quantity > 0
@@ -175,7 +151,6 @@ async function handlePublicCatalog(url, env) {
     name_en: row.name_en == null ? null : String(row.name_en),
     condition: row.condition == null ? null : String(row.condition),
     part_code: row.part_code == null ? null : String(row.part_code),
-    sale_price_piasters: row.sale_price_piasters == null ? null : Number(row.sale_price_piasters),
     category: row.category == null ? null : String(row.category),
     in_stock: row.in_stock === true || Number(row.in_stock) === 1,
     fitments: JSON.parse(row.fitments || "[]").map(fitment => ({

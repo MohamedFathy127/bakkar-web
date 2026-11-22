@@ -29,9 +29,9 @@ test("catalog filters trim and bound user input and reject invalid years", () =>
 });
 
 test("catalog cursors are encoded for a specific sort and reject invalid data", () => {
-  const cursor = encodeCursor({ sort: "price_asc", priceIsNull: 0, price: 0, id: "product-1" });
-  assert.deepEqual(decodeCursor(cursor, "price_asc"), { sort: "price_asc", priceIsNull: 0, price: 0, id: "product-1" });
-  assert.equal(decodeCursor(cursor, "name"), undefined);
+  const cursor = encodeCursor({ sort: "name", name: "مساعد", id: "product-1" });
+  assert.deepEqual(decodeCursor(cursor, "name"), { sort: "name", name: "مساعد", id: "product-1" });
+  assert.equal(decodeCursor(cursor, "id"), undefined);
   assert.equal(decodeCursor("not/a/cursor", "id"), undefined);
 });
 
@@ -52,7 +52,7 @@ test("public catalog filters through the public projection, pages, and returns o
   assert.equal(body.pagination.has_more, true);
   assert.equal(typeof body.pagination.next_cursor, "string");
   assert.equal(decodeCursor(body.pagination.next_cursor, "id").id, "product-1");
-  assert.equal(body.data[0].sale_price_piasters, 0);
+  assert.equal("sale_price_piasters" in body.data[0], false);
   assert.equal(body.data[0].in_stock, true);
   assert.equal(body.data[0].fitments[0].model, "Sportage");
   assert.equal("purchase_price_piasters" in body.data[0], false);
@@ -78,6 +78,7 @@ test("Worker public catalog route keeps CORS and public data allowlists, while a
   }), env);
   const publicBody = await publicResponse.json();
   assert.equal(publicResponse.headers.get("access-control-allow-origin"), "https://bakkar-web.pages.dev");
+  assert.equal(publicBody.data[0].sale_price_piasters, undefined);
   assert.equal(publicBody.data[0].purchase_price_piasters, undefined);
   assert.equal(publicBody.data[0].internal_notes, undefined);
 
@@ -139,7 +140,7 @@ test("catalog metadata exposes published brand, category, condition, and model o
   assert.ok(db.calls.every(call => /sale_price_piasters IS NOT NULL/.test(call.sql)));
 });
 
-test("client mapping keeps zero prices, hides unknown/private fields, and matches any confirmed fitment", () => {
+test("client mapping omits all prices, hides private fields, and matches any confirmed fitment", () => {
   const product = mapCatalogProduct({
     id: "uuid-1", name: "مساعد", name_en: "Shock", part_code: "A-1", category: "عفشة",
     sale_price_piasters: 0, in_stock: true, purchase_price_piasters: 999, internal_notes: "private",
@@ -148,7 +149,7 @@ test("client mapping keeps zero prices, hides unknown/private fields, and matche
       { brand_en: "Hyundai", brand_ar: "هيونداي", model: "Tucson", year_from: null, year_to: null },
     ],
   });
-  assert.equal(product.price, 0);
+  assert.equal("price" in product, false);
   assert.equal(product.fitments.length, 2);
   assert.equal("purchase_price_piasters" in product, false);
   assert.equal("internal_notes" in product, false);
