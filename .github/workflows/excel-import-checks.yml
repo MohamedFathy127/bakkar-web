@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/excel-import
+      - feature/inventory-reliability
   pull_request:
     branches:
       - feature/inventory-management
