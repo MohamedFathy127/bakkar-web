@@ -76,6 +76,17 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <button type="submit">إضافة مكان تخزين</button>
 <div id="locations" class="muted"></div>
 </form>
+<h3>استيراد ملف Excel</h3>
+<section class="panel">
+<p>ارفع ملف XLSX لمعاينة الصفوف أولًا. لن يتغير المخزون إلا بعد اختيار قرار لكل صف والضغط على اعتماد.</p>
+<input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+<button id="previewExcelBtn" type="button">رفع الملف ومعاينة الصفوف</button>
+<button id="resumeExcelBtn" type="button" class="secondary">فتح معاينة سابقة</button>
+<div id="excelImportMsg" class="notice hidden"></div>
+<div id="excelImportSummary"></div>
+<div id="excelImportRows"></div>
+<button id="applyExcelBtn" type="button" class="hidden">اعتماد القرارات المحددة</button>
+</section>
 <h3>تسجيل حركة مخزون</h3>
 <form id="movementForm" class="panel">
 <label>القطعة</label><select id="movementProduct" required><option value="">اختر القطعة</option></select>
@@ -159,6 +170,69 @@ async function refreshAvailableStock(){
  catch(e){$("availableStock").textContent=e.message}
 }
 function egpToPiasters(id){const v=$(id).value;if(v==="")return null;const n=Number(v);return Number.isFinite(n)&&n>=0?Math.round(n*100):undefined}
+let currentImportBatchId=null,currentImportRows=[];
+function importMessage(value){$("excelImportMsg").textContent=value;$("excelImportMsg").classList.remove("hidden")}
+function renderImportRows(rows,batch){
+ currentImportRows=rows||[];
+ $("excelImportSummary").textContent=batch?("الملف: "+batch.filename+" — إجمالي الصفوف: "+batch.total_rows+" — الحالة: "+batch.status):"";
+ $("excelImportRows").innerHTML=currentImportRows.map(r=>{
+  const item=r.item||{},issues=r.issues||[],candidates=r.candidates||[];
+  const exactDuplicate=issues.some(x=>x.startsWith("يوجد صف مطابق تمامًا"));
+  const invalid=!item.part_name_ar||item.part_name_ar.length>160||(item.year_from!==null&&item.year_to!==null&&item.year_to<item.year_from);
+  const locked=exactDuplicate||invalid||r.status!=="preview";
+  const choices=locked?'<option value="skip">تخطي هذا الصف</option>':
+   '<option value="">اختر قرارًا لهذا الصف</option><option value="create">إنشاء قطعة جديدة</option>'+
+   candidates.map(c=>'<option value="match:'+escapeHtml(c.id)+'">مطابقة مع: '+escapeHtml(c.part_name_ar)+' — '+escapeHtml(c.condition||"الحالة غير محددة")+' — رصيد '+Number(c.total_quantity||0)+'</option>').join("")+
+   '<option value="skip">تخطي هذا الصف</option>';
+  const warning=issues.length?issues.join(" • "):"لا توجد تحذيرات";
+  const state=r.status==="preview"?"بانتظار قرارك":r.status==="applied"?"تم الاعتماد":r.status==="skipped"?"تم التخطي":"تعذر الاعتماد";
+  return '<div class="panel excel-row" data-row="'+Number(r.row_number)+'"><strong>صف '+Number(r.row_number)+' — '+escapeHtml(item.part_name_ar||"اسم القطعة غير موجود")+'</strong>'+
+   '<p>الماركة: '+escapeHtml(item.brand_raw||"—")+' | الموديل: '+escapeHtml(item.model_raw||"—")+' | السنوات: '+escapeHtml(item.year_from??"—")+' إلى '+escapeHtml(item.year_to??"—")+'</p>'+
+   '<p>الكمية: '+escapeHtml(item.quantity??"—")+' | المخزن: '+escapeHtml(item.location_raw||"غير محدد")+' | الكود: '+escapeHtml(item.part_code||"—")+'</p>'+
+   '<p>البيع: '+escapeHtml(item.sale_price_piasters==null?"غير محدد":(Number(item.sale_price_piasters)/100).toFixed(2)+" ج.م")+' | الشراء: '+escapeHtml(item.purchase_price_piasters==null?"غير محدد":(Number(item.purchase_price_piasters)/100).toFixed(2)+" ج.م")+' | الحالة: '+escapeHtml(item.condition||"—")+'</p>'+
+   '<p>مراجعة: '+escapeHtml(warning)+' | الحالة: '+escapeHtml(state)+'</p>'+
+   (r.status==="preview"?'<label>قرار الصف</label><select class="excel-decision" data-row="'+Number(r.row_number)+'">'+choices+'</select>':'')+'</div>';
+ }).join("");
+ $("applyExcelBtn").classList.toggle("hidden",!currentImportBatchId||!currentImportRows.some(r=>r.status==="preview"));
+}
+async function loadImportBatch(batchId){
+ const result=await api("/api/admin/imports/"+encodeURIComponent(batchId));
+ currentImportBatchId=result.batch.id;
+ renderImportRows(result.rows,result.batch);
+ importMessage("تم فتح المعاينة المحفوظة. راجع الصفوف التي ما زالت بانتظار قرار.");
+}
+$("previewExcelBtn").onclick=async()=>{
+ const file=$("excelFile").files?.[0];if(!file){importMessage("اختر ملف XLSX أولًا.");return}
+ try{
+  $("previewExcelBtn").disabled=true;importMessage("جارٍ رفع الملف وقراءة الصفوف...");
+  const body=new FormData();body.append("file",file,file.name);
+  const response=await fetch("/api/admin/imports/preview",{method:"POST",body,credentials:"same-origin"});
+  const data=await response.json().catch(()=>({error:"استجابة غير مفهومة"}));
+  if(!response.ok){if(data.existing_batch?.id){await loadImportBatch(data.existing_batch.id);importMessage(data.error+" تم فتح المعاينة السابقة.");return}throw Error(data.error||"تعذر إنشاء المعاينة")}
+  currentImportBatchId=data.batch_id;
+  renderImportRows(data.rows,{filename:data.filename,total_rows:data.total_rows,status:"preview"});
+  importMessage("تمت المعاينة دون تعديل المنتجات أو الأرصدة. راجع التحذيرات واختر قرارًا لكل صف.");
+ }catch(e){importMessage(e.message)}finally{$("previewExcelBtn").disabled=false}
+};
+$("resumeExcelBtn").onclick=async()=>{
+ const id=prompt("أدخل رقم دفعة المعاينة المحفوظة:");if(!id)return;
+ try{await loadImportBatch(id.trim())}catch(e){importMessage(e.message)}
+};
+$("applyExcelBtn").onclick=async()=>{
+ try{
+  const decisions={};
+  for(const r of currentImportRows.filter(x=>x.status==="preview")){
+   const select=document.querySelector('.excel-decision[data-row="'+Number(r.row_number)+'"]');
+   if(!select||!select.value)throw Error("اختر قرارًا لكل صف قبل الاعتماد. الصف "+r.row_number);
+   decisions[String(r.row_number)]=select.value;
+  }
+  if(!confirm("هل راجعت كل الصفوف وتريد تنفيذ القرارات؟ سيتم تحديث أرصدة المخازن حسب الكميات المحددة في الملف."))return;
+  $("applyExcelBtn").disabled=true;
+  const result=await api("/api/admin/imports/"+encodeURIComponent(currentImportBatchId)+"/apply",{method:"POST",body:JSON.stringify({decisions})});
+  importMessage("نتيجة التنفيذ: إنشاء "+result.created+"، مطابقة "+result.matched+"، تخطي "+result.skipped+"، تعذر "+result.failed+"، متبقي "+result.pending+".");
+  await loadImportBatch(currentImportBatchId);await loadAdmin();
+ }catch(e){importMessage(e.message)}finally{$("applyExcelBtn").disabled=false}
+};
 async function loadAdmin(){
  const [p,m,h]=await Promise.all([api("/api/admin/products"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12")]);
  $("brandId").innerHTML='<option value="">اختر الماركة</option>'+m.brands.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name_ar)+'</option>').join("");
