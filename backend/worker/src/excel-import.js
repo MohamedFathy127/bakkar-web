@@ -208,7 +208,7 @@ async function handleExcelImport(request, url, env, session) {
     const actualHeaders = (sheetRows[0] || []).map(x => normalize(x));
     const expectedHeaders = HEADERS.map(normalize);
     const missing = HEADERS.filter((header, i) => actualHeaders[i] !== expectedHeaders[i]);
-    if (missing.length || actualHeaders.length !== expectedHeaders.length) return reply({ error: "عناوين الأعمدة أو عددها أو ترتيبها لا يطابق قالب بكار.", expected_headers: HEADERS, actual_headers: sheetRows[0] || [] }, 400);
+    const extraHeaders = actualHeaders.slice(HEADERS.length).some(value => value !== "");\n    const extraData = sheetRows.slice(1).some(row => (row || []).slice(HEADERS.length).some(value => textValue(value) !== null));\n    if (missing.length || extraHeaders || extraData) return reply({ error: "عناوين الأعمدة أو بياناتها لا تطابق قالب بكار المكوّن من 12 عمودًا.", expected_headers: HEADERS, actual_headers: sheetRows[0] || [] }, 400);
     if (sheetRows.length - 1 > MAX_ROWS) return reply({ error: "الملف يتجاوز الحد الأقصى وهو 500 صف." }, 413);
     const rows = await parseRows(env.DB, sheetRows);
     if (!rows.length) return reply({ error: "لم يتم العثور على صفوف بيانات." }, 400);
