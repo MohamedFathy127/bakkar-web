@@ -8,6 +8,7 @@ CREATE TABLE import_batch_rows (
   issues_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(issues_json)),
   status TEXT NOT NULL DEFAULT 'preview'
     CHECK (status IN ('preview','applied','skipped','failed')),
+  applied_action TEXT CHECK (applied_action IS NULL OR applied_action IN ('created','matched')),
   applied_product_id TEXT REFERENCES products(id) ON DELETE RESTRICT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   applied_at TEXT,
