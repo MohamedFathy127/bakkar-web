@@ -205,9 +205,11 @@ function renderImportPreview(data){
   const item=row.item||{},candidates=row.candidates||[];
   const pending=!row.status||row.status==="preview";
   const options=['<option value="">اختر قرار الصف</option>'];
-  candidates.forEach(candidate=>options.push('<option value="match:'+escapeHtml(candidate.id)+'">مطابقة: '+escapeHtml(candidate.part_name_ar)+' — '+escapeHtml(candidate.condition||"الحالة غير محددة")+' — رصيد '+Number(candidate.total_quantity||0)+'</option>'));
   const blocked=(row.issues||[]).some(issue=>issue.startsWith("يوجد صف آخر لنفس القطعة"))||!item.part_name_ar||item.part_name_ar.length>160||(item.year_from!=null&&item.year_to!=null&&item.year_to<item.year_from);
-  if(!blocked)options.push('<option value="create">إنشاء سجل جديد مستقل</option>');
+  if(!blocked){
+   candidates.forEach(candidate=>options.push('<option value="match:'+escapeHtml(candidate.id)+'">مطابقة: '+escapeHtml(candidate.part_name_ar)+' — '+escapeHtml(candidate.condition||"الحالة غير محددة")+' — رصيد '+Number(candidate.total_quantity||0)+'</option>'));
+   options.push('<option value="create">إنشاء سجل جديد مستقل</option>');
+  }
   options.push('<option value="skip">تخطي هذا الصف</option>');
   const issues=(row.issues||[]).map(issue=>'<li>'+escapeHtml(issue)+'</li>').join("");
   const decision=pending?'<select class="importDecision" data-row="'+Number(row.row_number)+'">'+options.join("")+'</select>':(row.status==="applied"?"تم اعتماده":"تم تخطيه");
