@@ -9,13 +9,17 @@ A separate Cloudflare Worker API for the Bakkar inventory system.
 - Cloudflare D1 is the source of truth for products, stock and audit history.
 - The public catalog reads only approved public fields. It never returns purchase prices, internal notes, exact stock balances or staff records.
 - The private administration interface is served at `/admin` on this Worker hostname. Only the owner signs in there; the public Pages website remains unchanged.
-- Admin sessions use random opaque tokens stored as SHA-256 hashes in D1 and an HttpOnly, Secure, SameSite=Strict cookie scoped to `/api/admin`. Passwords are salted and derived with PBKDF2-HMAC-SHA256 using 210,000 iterations. Cloudflare Access is not required.
+- Admin sessions use random opaque tokens stored as SHA-256 hashes in D1 and an HttpOnly, Secure, SameSite=Strict cookie scoped to `/api/admin`. Passwords are salted and derived with PBKDF2-HMAC-SHA256 using 100,000 iterations (the tested Workers runtime limit). Cloudflare Access is not required.
 
 ## Deployment status
 
-The Worker is separately deployed at:
+Production Worker (do not change without separate approval):
 
 - `https://bakkar-inventory-api.mohamedfathy12127.workers.dev`
+
+Isolated test Worker (hardened build):
+
+- `https://bakkar-inventory-test-api.mohamedfathy12127.workers.dev`
 - Health: `/api/health`
 - Public catalog: `/api/catalog`
 - Private admin: `/admin`
@@ -38,7 +42,7 @@ The code in this branch is not automatically proof of what is currently deployed
 
 No product-write or stock-movement routes are enabled yet. The dashboard is deliberately read-only at this stage.
 
-## Required setup (not yet performed)
+## Deployment and test status
 
 1. Review and apply `backend/migrations/0002_admin_auth.sql` to the existing `bakkar-inventory` D1 database exactly once. Do not rerun it after successful application.
 2. Apply `backend/migrations/0003_login_ip_throttle.sql` once to the isolated test D1 database before deploying the hardened test Worker. Do not apply it to production without a separate approval.
