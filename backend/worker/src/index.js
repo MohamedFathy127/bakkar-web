@@ -260,6 +260,31 @@ $("applyExcelBtn").onclick=async()=>{
 };
 async function loadAdmin(){
  const [p,m,h,a]=await Promise.all([api("/api/admin/products"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12"),api("/api/admin/analytics")]);
+ const fmtNumber=value=>Number(value||0).toLocaleString("ar-EG");
+ const fmtMoney=value=>(Number(value||0)/100).toLocaleString("ar-EG",{minimumFractionDigits:2,maximumFractionDigits:2})+" ج.م";
+ const o=a.overview||{},s=a.stock||{};
+ const metrics=[
+  ["المنتجات النشطة",fmtNumber(o.active_products),"سجلات غير مؤرشفة"],
+  ["إجمالي الوحدات",fmtNumber(s.total_units),"في جميع أماكن التخزين"],
+  ["القطع المنشورة",fmtNumber(o.public_products),"ظاهرة في الكتالوج العام"],
+  ["توافقات تحتاج مراجعة",fmtNumber(o.with_pending_fitment),"لا تُنشر قبل التأكيد"],
+  ["قيمة الشراء التقديرية",fmtMoney(s.estimated_purchase_value_piasters),"حسب سعر الشراء المسجل"],
+  ["قطع بدون كود",fmtNumber(o.missing_codes),"تحتاج استكمالًا عند توفر الكود"],
+ ];
+ $("analyticsCards").innerHTML=metrics.map((x,i)=>'<div class="metric"><span>'+x[0]+'</span><strong>'+x[1]+'</strong><small>'+x[2]+'</small></div>').join("");
+ const renderBars=(items,labelKey,valueKey)=>{
+  const max=Math.max(1,...items.map(x=>Number(x[valueKey]||0)));
+  return items.length?items.map(x=>{
+   const value=Number(x[valueKey]||0),width=Math.max(0,Math.min(100,value/max*100));
+   return '<div class="bar-row"><div class="bar-meta"><span>'+escapeHtml(x[labelKey]||"غير محدد")+'</span><strong>'+fmtNumber(value)+'</strong></div><div class="bar-track"><div class="bar-fill" style="width:'+width.toFixed(1)+'%"></div></div></div>';
+  }).join(""):'<p class="muted">لا توجد بيانات كافية حتى الآن.</p>';
+ };
+ $("analyticsLocations").innerHTML=renderBars(a.by_location||[],"name","total_units");
+ $("analyticsBrands").innerHTML=renderBars(a.by_brand||[],"name_ar","product_count");
+ const movementNames={in:"إضافة",out:"صرف",adjustment:"تسوية",transfer_in:"تحويل وارد",transfer_out:"تحويل صادر"};
+ $("analyticsMovements").innerHTML=(a.movements_30d||[]).length?'<table><thead><tr><th>نوع الحركة</th><th>عدد العمليات</th><th>الوحدات</th></tr></thead><tbody>'+(a.movements_30d||[]).map(x=>'<tr><td>'+escapeHtml(movementNames[x.movement_type]||x.movement_type)+'</td><td>'+fmtNumber(x.movement_count)+'</td><td>'+fmtNumber(x.units)+'</td></tr>').join("")+'</tbody></table>':'<p class="muted">لا توجد حركات خلال آخر 30 يومًا.</p>';
+ $("analyticsQuality").innerHTML='<p>بدون سعر بيع: <strong>'+fmtNumber(o.missing_sale_prices)+'</strong></p><p>بدون سعر شراء: <strong>'+fmtNumber(o.missing_purchase_prices)+'</strong></p><p>بدون توافق سيارة: <strong>'+fmtNumber(o.without_fitment)+'</strong></p><p>أرصدة بدون سعر شراء: <strong>'+fmtNumber(s.balances_without_purchase_price)+'</strong></p>';
+ $("analyticsImports").innerHTML=(a.recent_imports||[]).length?'<table><thead><tr><th>الملف</th><th>الحالة</th><th>صفوف</th><th>إنشاء</th><th>تحديث</th><th>تخطي</th><th>أخطاء</th></tr></thead><tbody>'+(a.recent_imports||[]).map(x=>'<tr><td>'+escapeHtml(x.filename)+'</td><td>'+escapeHtml(x.status)+'</td><td>'+fmtNumber(x.total_rows)+'</td><td>'+fmtNumber(x.created_count)+'</td><td>'+fmtNumber(x.updated_count)+'</td><td>'+fmtNumber(x.skipped_count)+'</td><td>'+fmtNumber(x.error_count)+'</td></tr>').join("")+'</tbody></table>':'<p class="muted">لا توجد عمليات استيراد محفوظة.</p>';
  $("brandId").innerHTML='<option value="">اختر الماركة</option>'+m.brands.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name_ar)+'</option>').join("");
  $("movementProduct").innerHTML='<option value="">اختر القطعة</option>'+p.data.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.part_name_ar)+' — '+escapeHtml(x.condition||"الحالة غير محددة")+' — رصيد إجمالي: '+Number(x.total_quantity||0)+' — #'+escapeHtml(x.id.slice(0,8))+'</option>').join("");
  $("movementLocation").innerHTML='<option value="">اختر المخزن</option>'+m.locations.filter(x=>x.active).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join("");
@@ -269,6 +294,38 @@ async function loadAdmin(){
  document.querySelectorAll(".editBtn").forEach(btn=>btn.onclick=()=>openExistingProductForReview(btn.dataset.id));
  document.querySelectorAll(".archiveBtn").forEach(btn=>btn.onclick=async()=>{if(!confirm("أرشفة القطعة؟ ستختفي من الكتالوج العام مع الاحتفاظ بسجلها."))return;try{await api("/api/admin/products/"+btn.dataset.id,{method:"DELETE",body:JSON.stringify({version:Number(btn.dataset.version)})});message("adminMsg","تمت أرشفة القطعة.");await loadAdmin()}catch(e){message("adminMsg",e.message)}});
 }
+$("exportExcelBtn").onclick=async()=>{
+ try{
+  $("exportExcelBtn").disabled=true;$("exportExcelMsg").textContent="جارٍ تجهيز ملف Excel...";
+  const result=await api("/api/admin/export-data");
+  if(result.truncated)throw Error("البيانات أكبر من حد التصدير الحالي؛ لم يتم إنشاء ملف ناقص.");
+  const XLSX=await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+  const headers=["الماركة","اسم القطعة","موديل السيارة","من سنة","إلى سنة","الكمية","سعر البيع (ج.م)","سعر الشراء (ج.م)","الحالة","مكان التخزين","كود القطعة","ملاحظات"];
+  const rows=[headers];
+  for(const product of result.data||[]){
+   const fitments=product.fitments||[],balances=product.balances||[];
+   const locations=balances.length?balances:[{location_name:"",quantity:null}];
+   const baseFitment=fitments[0]||{};
+   const makeRow=(fitment,location,includeQuantity=true)=>[
+    fitment?.brand_name_ar||"",product.part_name_ar||"",fitment?.model||"",
+    fitment?.year_from??"",fitment?.year_to??"",includeQuantity?(location?.quantity??""):"",
+    product.sale_price_piasters==null?"":Number(product.sale_price_piasters)/100,
+    product.purchase_price_piasters==null?"":Number(product.purchase_price_piasters)/100,
+    product.condition||"",location?.location_name||"",product.part_code||"",product.internal_notes||""
+   ];
+   locations.forEach((location,index)=>rows.push(makeRow(index===0?baseFitment:null,location,true)));
+   fitments.slice(1).forEach(fitment=>rows.push(makeRow(fitment,null,false)));
+  }
+  const workbook=XLSX.utils.book_new();
+  const worksheet=XLSX.utils.aoa_to_sheet(rows);
+  worksheet["!cols"]=[{wch:18},{wch:30},{wch:22},{wch:10},{wch:10},{wch:12},{wch:18},{wch:18},{wch:14},{wch:20},{wch:18},{wch:36}];
+  XLSX.utils.book_append_sheet(workbook,worksheet,"المخزون");
+  const date=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(workbook,"Bakkar_Inventory_"+date+".xlsx");
+  $("exportExcelMsg").textContent="تم تجهيز "+fmtNumber(rows.length-1)+" صفًا.";
+ }catch(e){$("exportExcelMsg").textContent=e.message||"تعذر تصدير الملف."}
+ finally{$("exportExcelBtn").disabled=false}
+};
 $("productForm").onsubmit=async e=>{e.preventDefault();try{
  const payload=buildProductPayload();
  if(editingProductId){
