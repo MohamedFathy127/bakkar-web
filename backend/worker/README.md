@@ -41,21 +41,22 @@ No product-write or stock-movement routes are enabled yet. The dashboard is deli
 ## Required setup (not yet performed)
 
 1. Review and apply `backend/migrations/0002_admin_auth.sql` to the existing `bakkar-inventory` D1 database exactly once. Do not rerun it after successful application.
-2. Configure Worker secrets/variables in the Cloudflare dashboard:
+2. Apply `backend/migrations/0003_login_ip_throttle.sql` once to the isolated test D1 database before deploying the hardened test Worker. Do not apply it to production without a separate approval.
+3. Configure Worker secrets/variables in the Cloudflare dashboard:
    - `OWNER_EMAIL`: the exact owner email approved for the initial account.
    - `BOOTSTRAP_SECRET`: a long, random, one-time setup secret (at least 32 random characters). Store it as a Worker secret, never in Git.
 3. Deploy this branch only after explicit approval and after confirming the existing production Worker will not be overwritten unexpectedly.
-4. Visit `https://bakkar-inventory-api.mohamedfathy12127.workers.dev/admin`, initialize the owner once, then remove the `BOOTSTRAP_SECRET` secret from Worker settings. The owner account cannot be initialized a second time through this endpoint.
-5. Test login, wrong-password behavior, logout, expiry and anonymous public catalog access.
+5. Visit the test Worker `/admin`, initialize the owner once, then remove the `BOOTSTRAP_SECRET` secret from Worker settings. The owner account cannot be initialized a second time through this endpoint.
+6. Test login, wrong-password behavior, rate limits, logout, expiry and anonymous public catalog access.
 
 Do not put the owner email, bootstrap secret, password, session token or other credentials in this repository. Never ask the user to paste secrets into chat.
 
 ## Security notes and limitations
 
 - Admin cookies are scoped to this Worker hostname, so the administration UI is served from the same origin. The public Pages site does not share or require this session.
-- State-changing authentication requests require a same-origin Origin header. The session cookie is HttpOnly, Secure and SameSite=Strict.
-- Login attempts are throttled per email and client IP hash (five failed attempts per 15-minute window). This D1-backed limit is a basic safeguard, not a substitute for a managed rate-limiting service against a distributed attack.
-- Password hashes use PBKDF2-HMAC-SHA256 with a unique random salt. Passwords are never stored in plaintext.
+- State-changing authentication requests require a same-origin `Origin`, a same-origin Fetch Metadata value when supplied, and JSON content type. Authentication request bodies are size-limited and validated before parsing. The session cookie is HttpOnly, Secure and SameSite=Strict.
+- Login attempts are throttled per email+IP (five failures per 15-minute window) and per IP across accounts (20 failures per 15-minute window). Expired throttle records and old expired sessions are opportunistically cleaned during login. This D1-backed limit is a basic safeguard, not a substitute for an edge rate-limiting service against distributed attacks.
+- Password hashes use PBKDF2-HMAC-SHA256 with a unique random salt and 100,000 iterations. Stored hashes are compared with `crypto.subtle.timingSafeEqual`; unknown accounts still incur a dummy derivation to reduce account-enumeration timing differences. Passwords are never stored in plaintext.
 - Sessions expire after eight hours; logout deletes the server-side session.
 - Public output is allow-listed and excludes purchase prices, internal notes, exact inventory balances, staff records, import records and audit history.
 - SQL values use prepared statements. Errors returned to clients are generic; detailed failures are written to Worker logs.
