@@ -319,7 +319,7 @@ async function handleExcelImport(request, url, env, session) {
       }
       const item = JSON.parse(row.normalized_json);
       const issues = JSON.parse(row.issues_json);
-      if (issues.some(issue => issue.startsWith("يوجد صف آخر لنفس القطعة")) ) { failed++; continue; }
+      if (issues.some(issue => issue.startsWith("يوجد صف مطابق تمامًا"))) { failed++; continue; }
       if (!item.part_name_ar || item.part_name_ar.length > 160 ||
           (item.year_from !== null && item.year_to !== null && item.year_to < item.year_from)) {
         failed++;
