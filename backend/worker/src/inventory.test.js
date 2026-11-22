@@ -66,3 +66,16 @@ test("stock movement rejects an invalid signed quantity before issuing database 
   assert.equal(response.status, 400);
   assert.equal(batchCount, 0);
 });
+
+test("publication endpoints reject cross-origin writes and invalid actions before database access", async () => {
+ let writes=0;const db={prepare(){writes++;return{bind(){return this},async first(){return null},async all(){return{results:[]}}}},async batch(){writes++;return[]}};
+ const cross=await handleInventoryAdmin(new Request("https://api.example/api/admin/products/publication",{method:"POST",headers:{Origin:"https://attacker.example","Content-Type":"application/json"},body:JSON.stringify({scope:"eligible"})}),new URL("https://api.example/api/admin/products/publication"),{DB:db},{email:"owner@example.test"});
+ assert.equal(cross.status,403);assert.equal(writes,0);
+ const invalid=await handleInventoryAdmin(new Request("https://api.example/api/admin/products/publication",{method:"POST",headers:{Origin:"https://api.example","Content-Type":"application/json"},body:JSON.stringify({product_id:"not-a-uuid",action:"publish"})}),new URL("https://api.example/api/admin/products/publication"),{DB:db},{email:"owner@example.test"});
+ assert.equal(invalid.status,400);assert.equal(writes,0);
+});
+test("publication status query exposes active products and encodes sale/fitment eligibility", async () => {
+ let sql="";const db={prepare(value){sql=value;return{async all(){return{results:[{id:"p",is_public:0,fitments_json:"[]"}]}}}}};
+ const response=await handleInventoryAdmin(new Request("https://api.example/api/admin/products/publication-status"),new URL("https://api.example/api/admin/products/publication-status"),{DB:db},{email:"owner@example.test"});
+ const data=await response.json();assert.equal(response.status,200);assert.match(sql,/archived_at IS NULL/);assert.match(sql,/sale_price_piasters IS NULL/);assert.match(sql,/compatibility_status IS NOT 'confirmed'/);assert.equal(data.data[0].is_public,false);
+});

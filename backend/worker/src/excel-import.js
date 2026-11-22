@@ -318,6 +318,12 @@ async function parseRows(db, rows) {
   return output;
 }
 
+function mapExcelHeaders(inputHeaders) {
+ const actual=(inputHeaders||[]).map(normalize),expected=HEADERS.map(normalize);
+ const mapping=expected.map(header=>{const matches=[];actual.forEach((value,index)=>{if(value===header)matches.push(index)});return matches.length===1?matches[0]:-1});
+ const duplicate=actual.some((value,index)=>value&&actual.indexOf(value)!==index),missing=mapping.some(index=>index<0),used=new Set(mapping.filter(index=>index>=0));
+ return {mapping,duplicate,missing,extra:actual.map((value,index)=>({value,index})).filter(x=>x.value&&!used.has(x.index))};
+}
 async function handleExcelImport(request, url, env, session) {
   const path = url.pathname;
   const method = request.method;
@@ -337,22 +343,25 @@ async function handleExcelImport(request, url, env, session) {
     if (sheetRows.some(row => !Array.isArray(row) || row.some(cell =>
       cell !== null && cell !== undefined && !["string", "number", "boolean"].includes(typeof cell)
     ))) return reply({ error: "بنية صفوف Excel غير صالحة. أعد حفظ الملف بصيغة XLSX وحاول مرة أخرى." }, 400);
-    const actualHeaders = (sheetRows[0] || []).map(x => normalize(x));
-    const expectedHeaders = HEADERS.map(normalize);
-    const missing = HEADERS.filter((header, i) => actualHeaders[i] !== expectedHeaders[i]);
-    const extraHeaders = actualHeaders.slice(HEADERS.length).some(value => value !== "");
-    const extraData = sheetRows.slice(1).some(row => (row || []).slice(HEADERS.length).some(value => textValue(value) !== null));
-    if (missing.length || extraHeaders || extraData) return reply({ error: "عناوين الأعمدة أو بياناتها لا تطابق قالب بكار المكوّن من 12 عمودًا.", expected_headers: HEADERS, actual_headers: sheetRows[0] || [] }, 400);
+    const actualHeaders=(sheetRows[0]||[]).map(x=>normalize(x)),expectedHeaders=HEADERS.map(normalize),headerIndexes=[],usedIndexes=new Set();
+    const duplicateHeader=actualHeaders.some((value,index)=>value&&actualHeaders.indexOf(value)!==index);
+    for(const expected of expectedHeaders){
+      const matches=[];actualHeaders.forEach((value,index)=>{if(value===expected)matches.push(index)});
+      if(matches.length!==1||usedIndexes.has(matches[0]))return reply({error:"تعذر تحديد الأعمدة بشكل آمن. تأكد من وجود كل عنوان مرة واحدة فقط دون تغيير اسمه.",expected_headers:HEADERS,actual_headers:sheetRows[0]||[]},400);
+      headerIndexes.push(matches[0]);usedIndexes.add(matches[0]);
+    }
+    const extraIndexes=actualHeaders.map((_,index)=>index).filter(index=>!usedIndexes.has(index));
+    const extraData=sheetRows.slice(1).some(row=>extraIndexes.some(index=>textValue((row||[])[index])!==null));
+    if(duplicateHeader||extraData)return reply({error:"يوجد عنوان مكرر أو عمود إضافي يحتوي على بيانات. لم يتم تجاهله حتى لا تنتقل البيانات إلى عمود خاطئ.",expected_headers:HEADERS,actual_headers:sheetRows[0]||[]},400);
+    const normalizedSheetRows=[HEADERS,...sheetRows.slice(1).map(row=>headerIndexes.map(index=>(row||[])[index]??null))];
     // Hash and reject duplicate batches before running product-candidate lookups.
-    const canonicalRows = sheetRows.map(row => row.map(cell =>
-      typeof cell === "string" ? cell.normalize("NFKC").trim() : cell
-    ));
+    const canonicalRows=normalizedSheetRows.map(row=>row.map(cell=>typeof cell==="string"?cell.normalize("NFKC").trim():cell));
     const hash = await sha256Hex(new TextEncoder().encode(JSON.stringify(canonicalRows)));
     const existingBatch = await env.DB.prepare("SELECT id,status,filename,created_at FROM import_batches WHERE content_sha256=? ORDER BY created_at DESC LIMIT 1").bind(hash).first();
     if (existingBatch?.status === "preview") {
       return reply({ error: "يوجد بالفعل ملف مطابق بانتظار المراجعة. تم فتح المعاينة المحفوظة بدل إنشاء دفعة مكررة.", existing_batch: existingBatch }, 409);
     }
-    const rows = await parseRows(env.DB, sheetRows);
+    const rows = await parseRows(env.DB, normalizedSheetRows);
     if (!rows.length) return reply({ error: "لم يتم العثور على صفوف بيانات." }, 400);
     const batchId = crypto.randomUUID();
     const uniqueFileHash = hash + ":" + batchId;
@@ -748,5 +757,5 @@ async function handleExcelImport(request, url, env, session) {
 export {
   handleExcelImport, normalize, textValue, numberValue, moneyPiasters,
   integerValue, yearValue, rowFingerprint, likelyBrandModelMismatch, otherLocationsMentioned, findDuplicateMatchedTargets, findCandidatesForItems,
-  buildMatchedProductUpdate,
+  buildMatchedProductUpdate, mapExcelHeaders,
 };
