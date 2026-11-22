@@ -214,7 +214,8 @@ function renderImportRows(rows,batch){
    normalizeMatchText(f.model)===normalizeMatchText(item.model)&&
    (f.year_from??null)===(item.year_from??null)&&(f.year_to??null)===(item.year_to??null)
   );
-  const exactSuggestion=exactCandidate&&normalizeMatchText(exactCandidate.part_name_ar)===normalizeMatchText(item.part_name_ar)&&
+  const exactSuggestion=exactCandidate&&issues.length===0&&!invalid&&
+   normalizeMatchText(exactCandidate.part_name_ar)===normalizeMatchText(item.part_name_ar)&&
    (!item.condition||!exactCandidate.condition||normalizeMatchText(exactCandidate.condition)===normalizeMatchText(item.condition))&&codeConsistent&&fitmentConsistent
    ?"match:"+exactCandidate.id:"";
   const choices=locked?'<option value="skip">تخطي هذا الصف</option>':
@@ -241,7 +242,7 @@ function renderImportRows(rows,batch){
    '<p>البيع: '+escapeHtml(item.sale_price_piasters==null?"غير محدد":(Number(item.sale_price_piasters)/100).toFixed(2)+" ج.م")+' | الشراء: '+escapeHtml(item.purchase_price_piasters==null?"غير محدد":(Number(item.purchase_price_piasters)/100).toFixed(2)+" ج.م")+' | الحالة: '+escapeHtml(item.condition||"—")+'</p>'+
    '<p>ملاحظات الملف: '+escapeHtml(item.notes||"لا توجد")+'</p>'+
    '<p>مراجعة: '+escapeHtml(warning)+' | الحالة: '+escapeHtml(state)+'</p>'+
-   (r.status==="preview"&&needsReview?'<label>مطلوب مراجعة — اختر القرار</label><select class="excel-decision" data-row="'+Number(r.row_number)+'" data-suggested="'+escapeHtml(exactSuggestion)+'">'+choices+'</select>':
+   (r.status==="preview"&&needsReview?'<label>'+(exactSuggestion?"مطابقة مقترحة — راجعها قبل الاعتماد":"مطلوب مراجعة — اختر القرار")+'</label><select class="excel-decision" data-row="'+Number(r.row_number)+'" data-suggested="'+escapeHtml(exactSuggestion)+'">'+choices+'</select>':
     r.status==="preview"?'<p class="success">سليم — سيتم إدراجه تلقائيًا عند الاعتماد</p>':'')+editor+'</div>';
  }).join("");
  document.querySelectorAll(".excel-decision").forEach(el=>{if(el.dataset.suggested)el.value=el.dataset.suggested});
