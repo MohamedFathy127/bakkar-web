@@ -6,7 +6,7 @@ const JSON_HEADERS = {
   "x-content-type-options": "nosniff",
 };
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
-const MAX_ROWS = 5000;
+const MAX_ROWS = 500;
 const HEADERS = [
   "الماركة", "اسم القطعة", "موديل السيارة", "من سنة", "إلى سنة",
   "الكمية", "سعر البيع (ج.م)", "سعر الشراء (ج.م)", "الحالة",
@@ -56,15 +56,17 @@ async function sha256Hex(bytes) {
 function rowToObject(row) {
   return Object.fromEntries(HEADERS.map((header, index) => [header, row[index] ?? null]));
 }
-async function findCandidates(db, item) {
+async function findCandidates(db, item, cachedProducts = null) {
   if (!item.part_name_ar && !item.part_code) return [];
-  const all = await db.prepare(`
-    SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-      COALESCE(SUM(ib.quantity),0) AS total_quantity
-    FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
-    WHERE p.archived_at IS NULL
-    GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500
-  `).all();
+  const all = cachedProducts
+    ? { results: cachedProducts }
+    : await db.prepare(`
+      SELECT p.id, p.part_name_ar, p.part_code, p.condition,
+        COALESCE(SUM(ib.quantity),0) AS total_quantity
+      FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
+      WHERE p.archived_at IS NULL
+      GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500
+    `).all();
   const nameKey = normalize(item.part_name_ar);
   const codeKey = normalize(item.part_code);
   return (all.results || []).filter(p =>
@@ -73,13 +75,22 @@ async function findCandidates(db, item) {
   ).slice(0, 10);
 }
 async function parseRows(db, rows) {
-  const [brandsResult, locationsResult] = await Promise.all([
+  const [brandsResult, locationsResult, productsResult] = await Promise.all([
     db.prepare("SELECT id,name_ar,name_en FROM brands").all(),
     db.prepare("SELECT id,name,active FROM locations").all(),
+    db.prepare(`
+      SELECT p.id, p.part_name_ar, p.part_code, p.condition,
+        COALESCE(SUM(ib.quantity),0) AS total_quantity
+      FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
+      WHERE p.archived_at IS NULL
+      GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500
+    `).all(),
   ]);
   const brands = brandsResult.results || [];
   const locations = locationsResult.results || [];
+  const cachedProducts = productsResult.results || [];
   const output = [];
+  const seenRows = new Set();
   for (let index = 1; index < rows.length; index++) {
     const raw = rowToObject(rows[index] || []);
     if (Object.values(raw).every(v => textValue(v) === null)) continue;
@@ -175,15 +186,16 @@ async function handleExcelImport(request, url, env, session) {
     const batchId = crypto.randomUUID();
     const now = new Date().toISOString();
     try {
-      const statements = [
-        env.DB.prepare("INSERT INTO import_batches(id,filename,file_sha256,status,total_rows,created_by,created_at) VALUES(?,?,?,'preview',?,?,?)")
-          .bind(batchId, filename, hash, rows.length, session.email, now),
-        ...rows.map(row => env.DB.prepare(`
+      await env.DB.prepare("INSERT INTO import_batches(id,filename,file_sha256,status,total_rows,created_by,created_at) VALUES(?,?,?,'preview',?,?,?)")
+        .bind(batchId, filename, hash, rows.length, session.email, now).run();
+      for (let offset = 0; offset < rows.length; offset += 40) {
+        const chunk = rows.slice(offset, offset + 40);
+        const statements = chunk.map(row => env.DB.prepare(`
           INSERT INTO import_batch_rows(id,batch_id,row_number,raw_json,normalized_json,issues_json,status,created_at)
           VALUES(?,?,?,?,?,?,'preview',?)
-        `).bind(crypto.randomUUID(), batchId, row.row_number, JSON.stringify(row.raw), JSON.stringify(row.item), JSON.stringify(row.issues), now)),
-      ];
-      await env.DB.batch(statements);
+        `).bind(crypto.randomUUID(), batchId, row.row_number, JSON.stringify(row.raw), JSON.stringify(row.item), JSON.stringify(row.issues), now));
+        await env.DB.batch(statements);
+      }
     } catch (error) {
       const existing = await env.DB.prepare("SELECT id,status,filename FROM import_batches WHERE file_sha256=? LIMIT 1").bind(hash).first();
       if (existing) return reply({ error: "تم رفع هذا الملف من قبل. استخدم المعاينة الموجودة بدل إعادة استيراده.", existing_batch: existing }, 409);
@@ -302,8 +314,8 @@ async function handleExcelImport(request, url, env, session) {
         VALUES(?,?,?,?,?,?,?)
       `).bind(crypto.randomUUID(), "product", productId, "excel_import_" + action,
         JSON.stringify({ batch_id: batchId, row_number: row.row_number, target_quantity: item.quantity, location_id: item.location_id }), session.email, now));
-      statements.push(env.DB.prepare("UPDATE import_batch_rows SET status='applied',applied_product_id=?,applied_at=? WHERE id=? AND status='preview'")
-        .bind(productId, now, row.id));
+      statements.push(env.DB.prepare("UPDATE import_batch_rows SET status='applied',applied_action=?,applied_product_id=?,applied_at=? WHERE id=? AND status='preview'")
+        .bind(action, productId, now, row.id));
       try {
         await env.DB.batch(statements);
         if (action === "created") created++; else matched++;
@@ -313,14 +325,15 @@ async function handleExcelImport(request, url, env, session) {
       }
     }
     const pending = await env.DB.prepare("SELECT COUNT(*) AS count FROM import_batch_rows WHERE batch_id=? AND status='preview'").bind(batchId).first();
-    const totals = await env.DB.prepare("SELECT SUM(CASE WHEN status='applied' THEN 1 ELSE 0 END) AS applied,SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END) AS skipped FROM import_batch_rows WHERE batch_id=?").bind(batchId).first();
     const complete = Number(pending?.count || 0) === 0;
     await env.DB.prepare(`
-      UPDATE import_batches SET status=?,created_count=?,updated_count=?,skipped_count=?,error_count=?,applied_at=?
+      UPDATE import_batches SET status=?,
+        created_count=(SELECT COUNT(*) FROM import_batch_rows WHERE batch_id=? AND applied_action='created'),
+        updated_count=(SELECT COUNT(*) FROM import_batch_rows WHERE batch_id=? AND applied_action='matched'),
+        skipped_count=(SELECT COUNT(*) FROM import_batch_rows WHERE batch_id=? AND status='skipped'),
+        error_count=?, applied_at=?
       WHERE id=?
-    `).bind(complete ? "applied" : "preview",
-      Number(totals?.applied || 0) - Number(totals?.applied || 0) + created,
-      matched, Number(totals?.skipped || 0), failed,
+    `).bind(complete ? "applied" : "preview", batchId, batchId, batchId, failed,
       complete ? new Date().toISOString() : null, batchId).run();
     return reply({ ok: true, created, matched, skipped, failed, pending: Number(pending?.count || 0), complete });
   }
