@@ -245,11 +245,11 @@ async function parseRows(db, rows) {
     if (item.quantity === undefined) { issues.push("الكمية غير صالحة؛ ستظل غير محددة ولن يتم تعديل الرصيد."); item.quantity = null; }
     if (item.sale_price_piasters === undefined) { issues.push("سعر البيع غير صالح؛ سيظل فارغًا حتى مراجعته."); item.sale_price_piasters = null; }
     if (item.purchase_price_piasters === undefined) { issues.push("سعر الشراء غير صالح؛ سيظل فارغًا حتى مراجعته."); item.purchase_price_piasters = null; }
-    if (item.year_from === undefined || item.year_to === undefined) {
+    const invalidYearInput = item.year_from === undefined || item.year_to === undefined;
+    if (invalidYearInput) {
       issues.push("إحدى سنوات التوافق غير صالحة؛ تم ترك سنة التوافق فارغة ولم يتم إنشاء توافق سيارة.");
       if (item.year_from === undefined) item.year_from = null;
       if (item.year_to === undefined) item.year_to = null;
-      item.model = null;
     }
     if (item.condition && item.condition.length > 40) { issues.push("الحالة أطول من الحد المسموح؛ تم ترك خانة الحالة فارغة."); item.condition = null; }
     if (item.part_name_ar && item.part_name_ar.length > 160) issues.push("اسم القطعة أطول من الحد المسموح (160 حرفًا).");
@@ -260,6 +260,7 @@ async function parseRows(db, rows) {
     item.brand_id = brand?.id || null;
     if (item.brand_raw && !brand) issues.push("الماركة غير معروفة في قاعدة البيانات؛ لن يتم إنشاء توافق سيارة تلقائيًا.");
     item.model = item.model_raw && !["***", "—", "-"].includes(item.model_raw) ? item.model_raw : null;
+    if (invalidYearInput) item.model = null;
     if (item.model_raw === "***") issues.push("موديل السيارة مكتوب ***؛ تم ترك التوافق غير محدد.");
     if (item.model && item.model.length > 80) { issues.push("موديل السيارة أطول من الحد المسموح؛ تم ترك التوافق غير محدد."); item.model = null; }
     if (item.model && !item.brand_id) issues.push("يوجد موديل بدون ماركة معروفة؛ لم يتم إنشاء توافق سيارة.");
@@ -370,49 +371,88 @@ async function handleExcelImport(request, url, env, session) {
         .bind(batch.id).all(),
       env.DB.prepare(`
         SELECT p.id, p.part_name_ar, p.part_code, p.condition,
-          COALESCE(SUM(ib.quantity),0) AS total_quantity
+          p.sale_price_piasters, p.purchase_price_piasters,
+          COALESCE(SUM(ib.quantity),0) AS total_quantity,
+          COALESCE((
+            SELECT json_group_array(json_object(
+              'brand_id',f.brand_id,'brand_name_ar',b.name_ar,'model',f.model,
+              'year_from',f.year_from,'year_to',f.year_to,
+              'compatibility_status',f.compatibility_status
+            ))
+            FROM product_fitments f JOIN brands b ON b.id=f.brand_id
+            WHERE f.product_id=p.id
+          ),'[]') AS fitments_json
         FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
         WHERE p.archived_at IS NULL
         GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500
       `).all(),
     ]);
-    const cachedProducts = products.results || [];
-    const mapped = await Promise.all((rows.results || []).map(async r => {
-      const item = JSON.parse(r.normalized_json);
-      return {
-        row_number: r.row_number, raw: JSON.parse(r.raw_json), item,
-        issues: JSON.parse(r.issues_json), status: r.status, product_id: r.applied_product_id,
-        candidates: r.status === "preview" ? await findCandidates(env.DB, item, cachedProducts) : [],
-      };
+    const records = rows.results || [];
+    const pendingRows = records.filter(row => row.status === "preview");
+    const candidateLists = await findCandidatesForItems(
+      env.DB, pendingRows.map(row => JSON.parse(row.normalized_json)), products.results || []
+    );
+    const candidatesByRow = new Map(pendingRows.map((row, index) => [row.row_number, candidateLists[index]]));
+    const mapped = records.map(row => ({
+      row_number: row.row_number, raw: JSON.parse(row.raw_json),
+      item: JSON.parse(row.normalized_json), issues: JSON.parse(row.issues_json),
+      status: row.status, product_id: row.applied_product_id,
+      candidates: candidatesByRow.get(row.row_number) || [],
     }));
     return reply({ batch, rows: mapped });
   }
 
-  const applyMatch = path.match(/^\/api\/admin\/imports\/([0-9a-f-]{36})\/apply$/i);
+  const applyMatch = path.match(/^\\/api\\/admin\\/imports\\/([0-9a-f-]{36})\\/apply$/i);
   if (applyMatch && method === "POST") {
     const origin = request.headers.get("Origin");
     const fetchSite = request.headers.get("Sec-Fetch-Site");
     if (!origin || origin !== new URL(request.url).origin || (fetchSite && fetchSite !== "same-origin")) {
       return reply({ error: "Invalid request origin." }, 403);
     }
-    const type = request.headers.get("Content-Type") || "";
-    if (!/^application\/json(?:\s*;|\s*$)/i.test(type)) return reply({ error: "Content-Type must be application/json." }, 400);
     const parsedBody = await readJsonBody(request, 64 * 1024);
     if (parsedBody.error) return reply({ error: parsedBody.error }, 400);
     const decisions = parsedBody.body?.decisions;
     if (!decisions || typeof decisions !== "object" || Array.isArray(decisions)) return reply({ error: "قرارات الصفوف مطلوبة." }, 400);
     const batchId = applyMatch[1];
-    const batch = await env.DB.prepare("SELECT id,status FROM import_batches WHERE id=?").bind(batchId).first();
+    const batch = await env.DB.prepare("SELECT id,status,apply_token,apply_lock_expires_at FROM import_batches WHERE id=?").bind(batchId).first();
     if (!batch) return reply({ error: "دفعة الاستيراد غير موجودة." }, 404);
-    if (batch.status === "applied") return reply({ error: "تم اعتماد هذه الدفعة بالفعل." }, 409);
+    if (batch.status !== "preview") return reply({ error: "هذه الدفعة ليست في حالة تسمح بالاعتماد." }, 409);
+    if (batch.apply_token && batch.apply_lock_expires_at && batch.apply_lock_expires_at > new Date().toISOString()) {
+      return reply({ error: "دفعة الاستيراد قيد التنفيذ بالفعل. انتظر قليلًا ثم أعد فتح المعاينة." }, 409);
+    }
     const rowsResult = await env.DB.prepare("SELECT * FROM import_batch_rows WHERE batch_id=? AND status='preview' ORDER BY row_number").bind(batchId).all();
     const rows = rowsResult.results || [];
     if (!rows.length) return reply({ error: "لا توجد صفوف معلقة في هذه الدفعة." }, 409);
+    const [productsResult] = await Promise.all([
+      env.DB.prepare(`
+        SELECT p.id, p.part_name_ar, p.part_code, p.condition,
+          p.sale_price_piasters, p.purchase_price_piasters,
+          COALESCE(SUM(ib.quantity),0) AS total_quantity,
+          COALESCE((
+            SELECT json_group_array(json_object(
+              'brand_id',f.brand_id,'brand_name_ar',b.name_ar,'model',f.model,
+              'year_from',f.year_from,'year_to',f.year_to,
+              'compatibility_status',f.compatibility_status
+            ))
+            FROM product_fitments f JOIN brands b ON b.id=f.brand_id
+            WHERE f.product_id=p.id
+          ),'[]') AS fitments_json
+        FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id
+        WHERE p.archived_at IS NULL
+        GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500
+      `).all(),
+    ]);
+    const candidateLists = await findCandidatesForItems(
+      env.DB, rows.map(row => JSON.parse(row.normalized_json)), productsResult.results || []
+    );
+    const candidatesByRow = new Map();
     const rowChoices = new Map();
-    for (const row of rows) {
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index];
       const item = JSON.parse(row.normalized_json);
       const issues = JSON.parse(row.issues_json);
-      const candidates = await findCandidates(env.DB, item);
+      const candidates = candidateLists[index] || [];
+      candidatesByRow.set(row.row_number, candidates);
       const supplied = decisions[String(row.row_number)];
       const cleanAutomaticRow = issues.length === 0 && candidates.length === 0;
       const choice = supplied === undefined && cleanAutomaticRow ? "create" : supplied;
@@ -425,10 +465,11 @@ async function handleExcelImport(request, url, env, session) {
       if ((invalidRow || exactDuplicate) && choice !== "skip") {
         return reply({ error: "هذا الصف غير صالح أو مكرر داخل الملف؛ المتاح له هو التخطي فقط.", row_number: row.row_number }, 400);
       }
+      if (choice.startsWith("match:") && !candidates.some(candidate => candidate.id === choice.slice(6))) {
+        return reply({ error: "السجل المختار لم يعد مطابقًا لهذا الصف أو لم يعد متاحًا. أعد فتح المعاينة واختر من النتائج الحالية.", row_number: row.row_number }, 409);
+      }
       rowChoices.set(row.row_number, choice);
     }
-    // A single existing product/location may only receive one target quantity
-    // from a batch. Otherwise later rows could silently overwrite earlier stock.
     const conflictingRows = findDuplicateMatchedTargets(rows, rowChoices);
     if (conflictingRows) {
       return reply({
@@ -444,90 +485,113 @@ async function handleExcelImport(request, url, env, session) {
         AND (apply_token IS NULL OR apply_lock_expires_at IS NULL OR apply_lock_expires_at < ?)
     `).bind(lockToken, lockExpiry, batchId, new Date().toISOString()).run();
     if (!lock.meta?.changes) {
-      return reply({ error: "دفعة الاستيراد قيد التنفيذ بالفعل. انتظر قليلًا ثم أعد فتح المعاينة." }, 409);
+      const latest = await env.DB.prepare("SELECT status FROM import_batches WHERE id=?").bind(batchId).first();
+      return reply({ error: latest?.status === "applied" ? "تم اعتماد هذه الدفعة بالفعل." : "دفعة الاستيراد قيد التنفيذ بالفعل. انتظر قليلًا ثم أعد فتح المعاينة." }, 409);
     }
+
     let created = 0, matched = 0, skipped = 0, failed = 0;
+    const failureMessage = "تعذر اعتماد هذه المجموعة بسبب تعارض أو قيد في قاعدة البيانات؛ لم يتم حفظ أي صف منها. راجع البيانات ثم أعد المحاولة أو تخطَّ الصفوف.";
+    const markChunkFailed = async chunk => {
+      const statements = chunk.map(row => {
+        const issues = JSON.parse(row.issues_json);
+        if (!issues.includes(failureMessage)) issues.push(failureMessage);
+        return env.DB.prepare("UPDATE import_batch_rows SET issues_json=? WHERE id=? AND status='preview'")
+          .bind(JSON.stringify(issues), row.id);
+      });
+      try { if (statements.length) await env.DB.batch(statements); }
+      catch (error) { console.error("excel_import_failure_annotation_failed", String(error?.message || error)); }
+    };
+
+    const skippedRows = rows.filter(row => rowChoices.get(row.row_number) === "skip");
+    if (skippedRows.length) {
+      try {
+        await env.DB.batch(skippedRows.map(row => env.DB.prepare(
+          "UPDATE import_batch_rows SET status='skipped',applied_at=? WHERE id=? AND status='preview'"
+        ).bind(new Date().toISOString(), row.id)));
+        skipped = skippedRows.length;
+      } catch (error) {
+        console.error("excel_import_skip_batch_failed", String(error?.message || error));
+        failed += skippedRows.length;
+        await markChunkFailed(skippedRows);
+      }
+    }
+
+    const applyPlans = [];
     for (const row of rows) {
       const choice = rowChoices.get(row.row_number);
-      if (choice === "skip") {
-        await env.DB.prepare("UPDATE import_batch_rows SET status='skipped',applied_at=? WHERE id=? AND status='preview'")
-          .bind(new Date().toISOString(), row.id).run();
-        skipped++;
-        continue;
-      }
+      if (choice === "skip") continue;
       const item = JSON.parse(row.normalized_json);
-      const issues = JSON.parse(row.issues_json);
-      if (issues.some(issue => issue.startsWith("يوجد صف مطابق تمامًا"))) { failed++; continue; }
-      if (!item.part_name_ar || item.part_name_ar.length > 160 ||
-          (item.year_from !== null && item.year_to !== null && item.year_to < item.year_from)) {
-        failed++;
-        continue;
-      }
-      let productId;
-      let action;
-      if (choice === "create") {
-        productId = crypto.randomUUID();
-        action = "created";
-      } else if (choice.startsWith("match:")) {
-        productId = choice.slice(6);
-        const existing = await env.DB.prepare("SELECT id FROM products WHERE id=? AND archived_at IS NULL").bind(productId).first();
-        if (!existing) { failed++; continue; }
-        const candidates = await findCandidates(env.DB, item);
-        if (!candidates.some(c => c.id === productId)) { failed++; continue; }
-        action = "matched";
-      } else {
-        return reply({ error: "قرار صف غير معروف.", row_number: row.row_number }, 400);
-      }
-      const now = new Date().toISOString();
+      const action = choice === "create" ? "created" : "matched";
+      const productId = action === "created" ? crypto.randomUUID() : choice.slice(6);
+      applyPlans.push({ row, item, action, productId });
+    }
+
+    for (let offset = 0; offset < applyPlans.length; offset += 40) {
+      const chunk = applyPlans.slice(offset, offset + 40);
       const statements = [];
-      if (action === "created") {
-        const notes = [item.notes, item.brand_raw ? "الماركة من ملف الاستيراد: " + item.brand_raw : "", item.model_raw && !item.model ? "موديل السيارة كما ورد: " + item.model_raw : ""].filter(Boolean).join("\n").slice(0, 2000) || null;
-        statements.push(env.DB.prepare(`
-          INSERT INTO products(id,part_name_ar,condition,part_code,internal_notes,sale_price_piasters,purchase_price_piasters,is_public,version,created_at,updated_at)
-          VALUES(?,?,?,?,?,?,?,0,1,?,?)
-        `).bind(productId, item.part_name_ar, item.condition, item.part_code, notes,
-          item.sale_price_piasters, item.purchase_price_piasters, now, now));
-        if (item.brand_id && item.model) {
+      for (const plan of chunk) {
+        const { row, item, action, productId } = plan;
+        const now = new Date().toISOString();
+        if (action === "created") {
+          const notes = [
+            item.notes,
+            item.brand_raw ? "الماركة من ملف الاستيراد: " + item.brand_raw : "",
+            item.model_raw && !item.model ? "موديل السيارة كما ورد: " + item.model_raw : "",
+          ].filter(Boolean).join("\\n").slice(0, 2000) || null;
           statements.push(env.DB.prepare(`
-            INSERT INTO product_fitments(id,product_id,brand_id,model,year_from,year_to,compatibility_status,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,'pending',?,?)
-          `).bind(crypto.randomUUID(), productId, item.brand_id, item.model, item.year_from, item.year_to, now, now));
+            INSERT INTO products(id,part_name_ar,condition,part_code,internal_notes,sale_price_piasters,purchase_price_piasters,is_public,version,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,0,1,?,?)
+          `).bind(productId, item.part_name_ar, item.condition, item.part_code, notes,
+            item.sale_price_piasters, item.purchase_price_piasters, now, now));
+          if (item.brand_id && item.model) {
+            statements.push(env.DB.prepare(`
+              INSERT INTO product_fitments(id,product_id,brand_id,model,year_from,year_to,compatibility_status,created_at,updated_at)
+              VALUES(?,?,?,?,?,?,'pending',?,?)
+            `).bind(crypto.randomUUID(), productId, item.brand_id, item.model, item.year_from, item.year_to, now, now));
+          }
         }
-      }
-      if (item.location_id && item.quantity !== null) {
+        if (item.location_id && item.quantity !== null) {
+          statements.push(env.DB.prepare(`
+            INSERT INTO stock_movements
+              (id,product_id,location_id,movement_group_id,movement_type,quantity_delta,balance_after,reason,reference,actor_email,created_at)
+            SELECT ?,?,?,?,
+              CASE WHEN ? > COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0)
+                THEN 'in' ELSE 'adjustment' END,
+              ? - COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0),
+              ?,?,?,?,?
+            WHERE ? <> COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0)
+          `).bind(
+            crypto.randomUUID(), productId, item.location_id, crypto.randomUUID(),
+            item.quantity, productId, item.location_id,
+            item.quantity, productId, item.location_id,
+            item.quantity, "تسوية الرصيد حسب ملف Excel بعد اعتماد المالك",
+            batchId + ":" + row.row_number, session.email, now,
+            item.quantity, productId, item.location_id
+          ));
+        }
         statements.push(env.DB.prepare(`
-          INSERT INTO stock_movements
-            (id,product_id,location_id,movement_group_id,movement_type,quantity_delta,balance_after,reason,reference,actor_email,created_at)
-          SELECT ?,?,?,?,
-            CASE WHEN ? > COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0)
-              THEN 'in' ELSE 'adjustment' END,
-            ? - COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0),
-            ?,?,?,?,?
-          WHERE ? <> COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0)
-        `).bind(
-          crypto.randomUUID(), productId, item.location_id, crypto.randomUUID(),
-          item.quantity, productId, item.location_id,
-          item.quantity, productId, item.location_id,
-          item.quantity, "تسوية الرصيد حسب ملف Excel بعد اعتماد المالك",
-          batchId + ":" + row.row_number, session.email, now,
-          item.quantity, productId, item.location_id
-        ));
+          INSERT INTO audit_log(id,entity_type,entity_id,action,after_json,actor_email,created_at)
+          VALUES(?,?,?,?,?,?,?)
+        `).bind(crypto.randomUUID(), "product", productId, "excel_import_" + action,
+          JSON.stringify({ batch_id: batchId, row_number: row.row_number, target_quantity: item.quantity, location_id: item.location_id }), session.email, now));
+        statements.push(env.DB.prepare("UPDATE import_batch_rows SET status='applied',applied_action=?,applied_product_id=?,applied_at=? WHERE id=? AND status='preview'")
+          .bind(action, productId, now, row.id));
       }
-      statements.push(env.DB.prepare(`
-        INSERT INTO audit_log(id,entity_type,entity_id,action,after_json,actor_email,created_at)
-        VALUES(?,?,?,?,?,?,?)
-      `).bind(crypto.randomUUID(), "product", productId, "excel_import_" + action,
-        JSON.stringify({ batch_id: batchId, row_number: row.row_number, target_quantity: item.quantity, location_id: item.location_id }), session.email, now));
-      statements.push(env.DB.prepare("UPDATE import_batch_rows SET status='applied',applied_action=?,applied_product_id=?,applied_at=? WHERE id=? AND status='preview'")
-        .bind(action, productId, now, row.id));
       try {
         await env.DB.batch(statements);
-        if (action === "created") created++; else matched++;
+        for (const plan of chunk) {
+          if (plan.action === "created") created++; else matched++;
+        }
       } catch (error) {
-        console.error("excel_import_row_failed", { row_number: row.row_number, error: String(error?.message || error) });
-        failed++;
+        console.error("excel_import_chunk_failed", {
+          first_row: chunk[0]?.row.row_number, last_row: chunk[chunk.length - 1]?.row.row_number,
+          row_count: chunk.length, error: String(error?.message || error),
+        });
+        failed += chunk.length;
+        await markChunkFailed(chunk.map(plan => plan.row));
       }
     }
+
     const pending = await env.DB.prepare("SELECT COUNT(*) AS count FROM import_batch_rows WHERE batch_id=? AND status='preview'").bind(batchId).first();
     const complete = Number(pending?.count || 0) === 0;
     const [locationReport, fitmentReport] = await Promise.all([
@@ -542,7 +606,7 @@ async function handleExcelImport(request, url, env, session) {
         GROUP BY l.id,l.name ORDER BY l.name
       `).bind(batchId).all(),
       env.DB.prepare(`
-        SELECT COUNT(*) AS count FROM import_batch_rows r
+        SELECT COUNT(DISTINCT r.applied_product_id) AS count FROM import_batch_rows r
         WHERE r.batch_id=? AND r.status='applied' AND r.applied_product_id IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM product_fitments f WHERE f.product_id=r.applied_product_id)
       `).bind(batchId).first(),
