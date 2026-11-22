@@ -223,8 +223,18 @@ $("importForm").onsubmit=async e=>{
   if(!response.ok){const error=Error(result.error||"تعذر معاينة الملف.");error.data=result;throw error}
   renderImportPreview(result);
  }catch(error){
-  if(error.data?.existing_batch){message("adminMsg","الملف تم رفعه قبل كده. رقم المعاينة الموجودة: "+error.data.existing_batch.id+" — الحالة: "+error.data.existing_batch.status);}
-  else message("adminMsg",error.message);
+  if(error.data?.existing_batch){
+   const existing=error.data.existing_batch;
+   if(existing.status==="preview"){
+    try{
+     const saved=await api("/api/admin/imports/"+existing.id);
+     renderImportPreview({batch_id:existing.id,filename:existing.filename,total_rows:saved.batch.total_rows,
+      warning_rows:saved.rows.filter(row=>(row.issues||[]).length).length,
+      duplicate_rows:saved.rows.filter(row=>(row.candidates||[]).length).length,rows:saved.rows});
+     message("adminMsg","دي معاينة موجودة لنفس الملف؛ استكمل قراراتك من غير رفعه أو إنشاء دفعة جديدة.");
+    }catch(loadError){message("adminMsg",loadError.message)}
+   }else message("adminMsg","الملف ده تم اعتماده بالفعل. مش هنسمح باستيراده مرة تانية.");
+  }else message("adminMsg",error.message);
  }finally{$("previewImportBtn").disabled=false}
 };
 $("applyImportBtn").onclick=async()=>{
