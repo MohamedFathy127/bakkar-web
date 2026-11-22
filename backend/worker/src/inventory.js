@@ -226,19 +226,19 @@ async function handleInventoryAdmin(request, url, env, session) {
         product.isPublic, now, id, expectedVersion),
       env.DB.prepare(`
         DELETE FROM product_fitments WHERE product_id=?
-          AND EXISTS (SELECT 1 FROM products WHERE id=? AND version=?)
-      `).bind(id, id, expectedVersion + 1),
+          AND EXISTS (SELECT 1 FROM products WHERE id=? AND version=? AND updated_at=?)
+      `).bind(id, id, expectedVersion + 1, now),
       ...product.fitments.map(f => env.DB.prepare(`
         INSERT INTO product_fitments
           (id, product_id, brand_id, model, year_from, year_to, compatibility_status)
         SELECT ?, ?, ?, ?, ?, ?, ?
-        WHERE EXISTS (SELECT 1 FROM products WHERE id=? AND version=?)
-      `).bind(f.id, id, f.brandId, f.model, f.yearFrom, f.yearTo, f.status, id, expectedVersion + 1)),
+        WHERE EXISTS (SELECT 1 FROM products WHERE id=? AND version=? AND updated_at=?)
+      `).bind(f.id, id, f.brandId, f.model, f.yearFrom, f.yearTo, f.status, id, expectedVersion + 1, now)),
       env.DB.prepare(`
         INSERT INTO audit_log (id, entity_type, entity_id, action, after_json, actor_email)
         SELECT ?, 'product', ?, 'updated', ?, ?
-        WHERE EXISTS (SELECT 1 FROM products WHERE id=? AND version=?)
-      `).bind(crypto.randomUUID(), id, productSnapshot(product), session.email, id, expectedVersion + 1),
+        WHERE EXISTS (SELECT 1 FROM products WHERE id=? AND version=? AND updated_at=?)
+      `).bind(crypto.randomUUID(), id, productSnapshot(product), session.email, id, expectedVersion + 1, now),
     ];
     const results = await env.DB.batch(statements);
     if (!results[0]?.meta?.changes) return reply({ error: "القطعة اتعدلت بالفعل أو لم تعد موجودة. حدّث الصفحة وحاول مرة أخرى." }, 409);
