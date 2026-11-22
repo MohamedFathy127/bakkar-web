@@ -164,7 +164,7 @@ async function handleAdmin(request, url, env) {
     const credential = await env.DB.prepare(`
       SELECT c.password_salt,c.password_hash,c.iterations,a.email
       FROM admin_credentials c JOIN staff_accounts a ON a.email=c.email COLLATE NOCASE
-      WHERE c.email=? COLLATE NOCASE AND a.active=1 LIMIT 1
+      WHERE c.email=? COLLATE NOCASE AND a.active=1 AND a.role='owner' LIMIT 1
     `).bind(email).first();
     let valid = false;
     if (credential && password) {
