@@ -45,15 +45,22 @@ The code in this branch is not automatically proof of what is currently deployed
 | DELETE | `/api/admin/products/:id` | Owner session + same-origin | Archives a product; it does not hard-delete history |
 | GET | `/api/admin/meta` | Owner session | Lists brands, categories and storage locations |
 | POST | `/api/admin/locations` | Owner session + same-origin | Creates a storage location |
-| GET | `/api/admin/stock-movements` | Owner session | Reads stock movement history |\n| POST | `/api/admin/imports/preview` | Owner session + same-origin | Uploads and stages an XLSX preview; no inventory writes |\n| GET | `/api/admin/imports/:id` | Owner session | Reads a staged import batch and its row decisions |\n| POST | `/api/admin/imports/:id/apply` | Owner session + same-origin | Applies explicit per-row create/match/skip decisions |
+| GET | `/api/admin/stock-movements` | Owner session | Reads stock movement history |
+| GET | `/api/admin/analytics` | Owner session | Aggregated inventory, data-quality, location, brand and movement metrics |
+| GET | `/api/admin/export-data` | Owner session | Exports active product fields, fitments and per-location balances for Excel generation |
+| GET | `/api/admin/backup-data` | Owner session | Downloads a checksummed application-data backup; excludes authentication secrets and sessions |
+| POST | `/api/admin/imports/preview` | Owner session + same-origin | Uploads and stages an XLSX preview; no inventory writes |
+| GET | `/api/admin/imports/:id` | Owner session | Reads a staged import batch and its row decisions |
+| PUT | `/api/admin/imports/:id/rows/:row` | Owner session + same-origin | Edits a staged row and reruns validation/candidate detection |
+| POST | `/api/admin/imports/:id/apply` | Owner session + same-origin | Applies explicit per-row create/match/skip decisions |
 | POST | `/api/admin/stock-movements` | Owner session + same-origin | Records an inbound, outbound or adjustment movement |
 
-The product and stock-management routes are implemented on `feature/inventory-management` and deployed to the isolated test Worker. The owner has browser-verified the core login, product, stock movement, and duplicate-review flows. The Excel import routes are only on `feature/excel-import` and have not been deployed. Production remains unchanged.
+The product and stock-management routes are deployed to the isolated test Worker. The current work is isolated on `feature/admin-import-sync-v2` and PR #13, based on `feature/inventory-management`. The latest PR #13 code is deployed to the isolated test Worker, including matched-product synchronization, row correction, repeat workbook synchronization, analytics, Excel export and a downloadable application-data backup. Production remains unchanged.
 
 ## Deployment and test status
 
-- Migrations `0001` through `0006` are applied to the isolated test D1 database only. Migration `0004` seeds Hyundai, Kia and SsangYong vehicle brands; `0005` adds movement-driven balance triggers; `0006` fixes outbound balance updates while preserving the non-negative stock constraint. Production D1 remains untouched.
-- The hardened source is deployed to the isolated test Worker, bound to `bakkar-inventory-test`.
+- Migrations `0001` through `0009` are applied to the isolated test D1 database only. Migration `0004` seeds Hyundai, Kia and SsangYong vehicle brands; `0005` adds movement-driven balance triggers; `0006` fixes outbound balance updates while preserving the non-negative stock constraint; `0007` stages Excel imports; `0008` adds the recoverable apply lock; `0009` separates workbook content hashes from unique batch identifiers to allow a previously applied workbook to be synchronized again. Production D1 remains untouched.
+- The latest PR #13 build is deployed to the isolated test Worker, bound to `bakkar-inventory-test`. Its `OWNER_EMAIL` secret binding and `ALLOWED_ORIGIN` setting were verified after deployment. GitHub Actions syntax, import tests and Wrangler dry-run checks passed. Direct runtime HTTP checks from the connected tool environment are blocked with a 403 network restriction, so browser end-to-end behavior still needs owner verification.
 - The test Worker retains `OWNER_EMAIL`; the one-time `BOOTSTRAP_SECRET` was removed after owner setup.
 - Production Worker and production D1 have not been changed.
 - Remaining verification: browser/API checks for valid and invalid login, IP throttling, malformed and oversized bodies, same-origin rejection, logout, and session expiry. Do not claim these checks passed until performed.
@@ -70,7 +77,8 @@ Do not put the owner email, bootstrap secret, password, session token or other c
 - Public output is allow-listed and excludes purchase prices, internal notes, exact inventory balances, staff records, import records and audit history.
 - SQL values use prepared statements. Errors returned to clients are generic; detailed failures are written to Worker logs.
 - CORS is restricted to the public Pages origin for the public catalog. CORS is not an authentication mechanism.
-- Owner-only product, location and stock-movement write routes are present in the isolated test Worker and require a valid owner session plus same-origin requests. The staged Excel import routes exist only on `feature/excel-import`; they require explicit per-row approval and are not deployed. Production Pages, Worker and D1 remain unchanged.
+- Owner-only product, location and stock-movement write routes are present in the isolated test Worker and require a valid owner session plus same-origin requests. PR #13 adds owner-only analytics, Excel export, application-data backup and safer Excel synchronization; these routes are deployed on the test Worker. Production Pages, Worker and D1 remain unchanged.
+- The downloadable JSON backup includes brands, categories, locations, products, fitments, balances, stock movements, audit history and import history. It intentionally excludes password hashes, active sessions, login throttles and staff-account credentials. It is an application-data snapshot, not a native D1 SQL dump or a one-click database restore.
 
 ## Local development
 
@@ -106,20 +114,24 @@ Use synthetic test data locally. Do not point local development at production D1
 - Not yet verified: deployed runtime behavior for the new routes, atomic stock updates, concurrency behavior, or browser UI integration. Do not deploy to either Worker until syntax checks and test-environment validation are complete.
 
 
-## Staged Excel inventory import (feature/excel-import)
+## Excel inventory synchronization (PR #13, not deployed)
 
-- Owner-only `POST /api/admin/imports/preview` accepts a single `.xlsx` file (maximum 5 MiB, first worksheet, at most 500 data rows) using the agreed 12-column Arabic template:
+- The accepted workbook uses the 12 Arabic columns:
   `الماركة، اسم القطعة، موديل السيارة، من سنة، إلى سنة، الكمية، سعر البيع (ج.م)، سعر الشراء (ج.م)، الحالة، مكان التخزين، كود القطعة، ملاحظات`.
-- The upload is parsed with SheetJS 0.20.3 from the official SheetJS CDN. The parser is dynamically imported only when the owner opens an import, to reduce Worker startup cost.
-- The original row values and normalized fields are staged in `import_batches` and `import_batch_rows` in one atomic D1 batch (the 100-row and 2 MiB file ceilings stay below D1's documented 2,000-statement batch example); a failed stage cannot leave a half-created batch. Preview does not change products, stock balances, or movements.
-- Product-candidate searches are batched in groups of 40, and approval writes are committed in atomic groups of 40 rows. This avoids one D1 request per spreadsheet row and keeps the 100-row/2 MiB workflow within the Free Workers subrequest budget in the normal path. The conservative synchronous row/file caps account for the Free Workers 10 ms CPU limit. A failed approval group rolls back as a unit, leaves its rows pending, and adds a review warning; it never partially commits that group.
-- A canonical SHA-256 hash of worksheet values prevents duplicate batches when only filename or cell whitespace/formatting changes. An existing preview can be resumed with `GET /api/admin/imports/:id`.
-- Applying a batch uses an expiring D1 lock to prevent concurrent approvals. Per-row product, stock movement, audit entry and row status are committed in a single D1 batch. If execution is interrupted, already committed rows remain applied and pending rows can be retried after the lock expires.
-- Clean rows with no warnings or detected candidates are created only after the owner clicks the final approval button. Rows with missing or suspicious data, possible matches, cross-location notes, or other warnings require an explicit create/match/skip decision. Invalid rows and exact in-file duplicates can only be skipped.
-- Candidate search includes exact database matches beyond the recent-products preview cache and compares normalized Arabic names/codes. Candidate details include condition, stock, prices and vehicle fitments; matching an existing product does not overwrite its name, code, condition, prices, fitments, or notes.
-- Two rows in the same batch cannot both set a target quantity for the same matched product and storage location. The owner must resolve the conflict rather than letting the later row silently overwrite the earlier stock.
-- For a row with a valid location and quantity, the Excel quantity is treated as the target balance for that product/location. The import creates an append-only stock movement for the difference; it does not add the full quantity on every import. Re-importing an edited workbook therefore does not duplicate the same balance.
-- Blank prices remain SQL NULL; an explicit zero remains zero. Missing/invalid quantity remains unset and does not create a stock movement. Missing location does not create or adjust a balance. Unknown brands and locations, missing codes, placeholder model values, and duplicate candidates are surfaced as preview warnings.
-- Import-created products remain private (`is_public=0`) and vehicle fitments remain `pending`; public catalog visibility is never enabled by import.
-- Migration `0007_excel_import_staging.sql` adds staged row storage. Migration `0008_excel_import_apply_lock.sql` adds the recoverable concurrency lock. Both must be applied to the isolated test D1 before testing the current reliability branch. Do not apply either migration to production without separate approval.
-- The staged import foundation was previously browser-tested by the owner on the isolated test Worker. The reliability hardening is being developed on `feature/inventory-reliability`; it must pass CI, migration checks and isolated runtime tests before it is deployed to the test Worker. Production remains untouched.
+- The browser reads the first worksheet with SheetJS 0.20.3 from the official CDN. Current conservative limits are 2 MiB and 100 data rows.
+- Preview stages original row values, normalized fields, warnings and candidate matches in D1. It does not change products, stock balances or movements.
+- The owner can edit any staged row field, save it and rerun validation/candidate detection before choosing create, match or skip.
+- Candidate searches are batched. Arabic/Persian digits, explicit zero, blank values, invalid numbers, placeholders, year ranges, unknown brands/locations, cross-location notes and duplicate candidates are handled explicitly.
+- A previously applied workbook may be uploaded again as a new synchronization batch. A matching batch still waiting for review is resumed instead of duplicated. Migration `0009` stores the content hash separately from the unique batch identifier.
+- On a matched row, non-empty source values update the existing product name, condition, code, prices and notes. Blank cells preserve existing website values; zero remains an explicit value. New fitments are added as pending and existing fitments are not silently deleted or confirmed.
+- Excel quantity is a target balance for the selected product/location, not an additive quantity. A stock movement records the difference. Missing quantity or location does not change stock.
+- Import-created products remain private and fitments remain pending. Import never publishes a product automatically.
+- Applying a batch uses an expiring lock and D1 batch transactions in chunks. Failed chunks remain pending for review/retry; successful chunks remain committed and are reported separately.
+- PR #13 includes unit tests for safe matched-field updates and CI syntax, test and Wrangler dry-run checks. These checks do not replace browser/API runtime tests on the deployed test Worker.
+- No production Worker deployment, production migration or production inventory import has been performed.
+
+## Admin analytics and exports (PR #13, not deployed)
+
+- The analytics endpoint aggregates active products, stock units, estimated purchase/sale values, missing fields, fitment review, location totals, brand totals, recent movements and import history.
+- Excel export generates the same 12-column Arabic workbook and expands multiple locations/fitments without repeating stock quantities.
+- The JSON application-data backup includes operational data and history with a SHA-256 checksum. It excludes authentication/session tables and is not a native D1 SQL backup. A separate tested restore workflow is still required before claiming one-click restoration.

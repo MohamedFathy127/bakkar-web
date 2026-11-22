@@ -33,6 +33,21 @@ button.secondary{background:#eee;color:#222}button:disabled{opacity:.5}
 .notice{padding:12px;border-radius:9px;background:#f5f0e6;margin-top:14px;white-space:pre-wrap}
 .hidden{display:none}.muted{font-size:13px;color:#777}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{text-align:right;padding:11px;border-bottom:1px solid #eee;font-size:14px}
 header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.brand{font-weight:bold;color:#8c2727}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin:14px 0}
+.metric{background:linear-gradient(145deg,#fff,#fffaf5);border:1px solid #e9e1d7;border-radius:14px;padding:17px;min-width:0}
+.metric span{display:block;color:#746d66;font-size:13px;margin-bottom:9px}.metric strong{display:block;font-size:23px;color:#292522;overflow-wrap:anywhere}
+.metric small{display:block;color:#8c2727;margin-top:6px;font-size:12px}
+.analytics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.analytics-grid .panel{margin:0;padding:18px}
+.bar-row{margin:13px 0}.bar-meta{display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:7px}.bar-track{height:9px;background:#eee8e1;border-radius:99px;overflow:hidden}.bar-fill{height:100%;background:#8c2727;border-radius:99px}
+.section-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.action-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.action-row button{margin-top:8px}
+.manual-tools{margin-top:18px}.manual-tools summary{cursor:pointer;font-weight:700;color:#8c2727;padding:4px}
+.excel-edit{border-top:1px solid #e9e1d7;margin-top:14px;padding-top:12px}
+.excel-edit textarea{width:100%;padding:12px;border:1px solid #d7d1c8;border-radius:9px;font:inherit}
+
+@media(max-width:640px){main{margin:12px auto;padding:10px}.panel{padding:16px}th,td{font-size:12px;padding:8px}}
+
 </style></head><body><main>
 <header><div><div class="brand">بكار لقطع غيار السيارات</div><h1>إدارة المخزون</h1><p>هذه لوحة خاصة بالإدارة فقط. الموقع العام لا يحتاج إلى تسجيل دخول.</p></div><button id="logout" class="secondary hidden">تسجيل الخروج</button></header>
 <section id="login" class="panel"><h2>تسجيل دخول المالك</h2>
@@ -46,10 +61,32 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <button id="setupBtn">إنشاء حساب المالك</button><div id="setupMsg" class="notice hidden"></div></section>
 <section id="dashboard" class="panel hidden">
 <h2>مرحبًا <span id="who"></span></h2>
-<p>إدارة المنتجات والأرصدة وحركة المخزون. أي تعديل هنا يُحفظ في قاعدة البيانات.</p>
+<p>لوحة بكار الخاصة بمزامنة بيانات برنامج المخزن، مراجعة الاستيراد، متابعة أداء الموقع وإدارة النسخ الاحتياطية.</p>
 <div id="adminMsg" class="notice hidden"></div>
 <div id="duplicateReview" class="panel hidden"></div>
-<h3>إضافة قطعة</h3>
+<div class="section-head"><h3>نظرة عامة على المخزون</h3><span class="muted">مؤشرات مباشرة من قاعدة بيانات الموقع</span></div>
+<div id="analyticsCards" class="metric-grid"><div class="metric">جارٍ تحليل البيانات...</div></div>
+<div class="analytics-grid">
+ <section class="panel"><h3>توزيع المخزون حسب المكان</h3><div id="analyticsLocations" class="muted">جارٍ التحميل...</div></section>
+ <section class="panel"><h3>توزيع القطع حسب الماركة</h3><div id="analyticsBrands" class="muted">جارٍ التحميل...</div></section>
+ <section class="panel"><h3>حركة المخزون خلال آخر 30 يومًا</h3><div id="analyticsMovements" class="muted">جارٍ التحميل...</div></section>
+ <section class="panel"><h3>جودة البيانات</h3><div id="analyticsQuality" class="muted">جارٍ التحميل...</div></section>
+</div>
+<section class="panel"><h3>آخر عمليات استيراد Excel</h3><div id="analyticsImports" class="muted">جارٍ التحميل...</div></section>
+<h3>استيراد وتصدير Excel</h3>
+<section class="panel">
+<p>استورد ملف برنامج المخزن بعد مراجعة الصفوف، أو صدّر نسخة Excel محدثة من بيانات الموقع.</p>
+<div class="action-row"><button id="exportExcelBtn" type="button" class="secondary">تصدير المخزون إلى Excel</button><button id="backupDataBtn" type="button" class="secondary">تنزيل نسخة احتياطية شاملة</button><span id="exportExcelMsg" class="muted"></span><span id="backupDataMsg" class="muted"></span></div>
+<p class="muted">النسخة الاحتياطية تشمل بيانات المنتجات والمخازن والأرصدة والحركات وسجل التدقيق وسجلات الاستيراد. لا تتضمن كلمات المرور أو جلسات الدخول.</p>
+<p>ارفع ملف XLSX لمعاينة الصفوف أولًا. لن يتغير المخزون إلا بعد اختيار قرار لكل صف والضغط على اعتماد.</p>
+<input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+<button id="previewExcelBtn" type="button">رفع الملف ومعاينة الصفوف</button>
+<button id="resumeExcelBtn" type="button" class="secondary">فتح معاينة سابقة</button>
+<div id="excelImportMsg" class="notice hidden"></div>
+<div id="excelImportSummary"></div>
+<div id="excelImportRows"></div>
+<button id="applyExcelBtn" type="button" class="hidden">اعتماد القرارات المحددة</button>
+</section><details class="panel manual-tools"><summary>أدوات يدوية إضافية (ليست جزءًا من المزامنة اليومية)</summary><h3>إضافة قطعة</h3>
 <form id="productForm" class="panel">
 <label>اسم القطعة بالعربي *</label><input id="partName" required maxlength="160">
 <label>اسم القطعة بالإنجليزي</label><input id="partNameEn" maxlength="160">
@@ -76,17 +113,6 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 <button type="submit">إضافة مكان تخزين</button>
 <div id="locations" class="muted"></div>
 </form>
-<h3>استيراد ملف Excel</h3>
-<section class="panel">
-<p>ارفع ملف XLSX لمعاينة الصفوف أولًا. لن يتغير المخزون إلا بعد اختيار قرار لكل صف والضغط على اعتماد.</p>
-<input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-<button id="previewExcelBtn" type="button">رفع الملف ومعاينة الصفوف</button>
-<button id="resumeExcelBtn" type="button" class="secondary">فتح معاينة سابقة</button>
-<div id="excelImportMsg" class="notice hidden"></div>
-<div id="excelImportSummary"></div>
-<div id="excelImportRows"></div>
-<button id="applyExcelBtn" type="button" class="hidden">اعتماد القرارات المحددة</button>
-</section>
 <h3>تسجيل حركة مخزون</h3>
 <form id="movementForm" class="panel">
 <label>القطعة</label><select id="movementProduct" required><option value="">اختر القطعة</option></select>
@@ -100,7 +126,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 </form>
 <h3>المنتجات المسجلة</h3><div id="products">جارٍ التحميل...</div>
 <h3>آخر حركات المخزون</h3><div id="movements">جارٍ التحميل...</div>
-</section>
+</details></section>
 <script>
 const $=id=>document.getElementById(id);
 let editingProductId=null,editingVersion=null,editingFitments=[],editingCategoryId=null,editingAliases="",editingNotes="";
@@ -108,7 +134,7 @@ function clearProductEdit(){editingProductId=null;editingVersion=null;editingFit
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{"content-type":"application/json",...(opts.headers||{})},credentials:"same-origin"});const d=await r.json().catch(()=>({error:"استجابة غير مفهومة"}));if(!r.ok){const e=Error(d.error||"حدث خطأ");e.status=r.status;e.code=d.code;e.data=d;throw e}return d}
 function message(id,s){$(id).textContent=s;$(id).classList.remove("hidden")}
 function show(which){["login","setup","dashboard"].forEach(x=>$(x).classList.toggle("hidden",x!==which));$("logout").classList.toggle("hidden",which!=="dashboard")}
-async function refresh(){try{const d=await api("/api/admin/me");$("who").textContent=d.user.email;show("dashboard");await loadAdmin()}catch(e){show("login")}}
+async function refresh(){let d;try{d=await api("/api/admin/me")}catch(e){show("login");message("loginMsg","تعذر التحقق من جلسة الدخول: "+e.message);return false}$("who").textContent=d.user.email;show("dashboard");try{await loadAdmin();return true}catch(e){message("adminMsg","تم تسجيل الدخول بنجاح، لكن تعذر تحميل بيانات لوحة الإدارة: "+e.message+" — أعد تحميل الصفحة أو حاول لاحقًا.");return false}}
 async function openExistingProductForReview(id){
  try{
   const result=await api("/api/admin/products/"+id);const p=result.data;
@@ -162,33 +188,84 @@ async function refreshAvailableStock(){
 function egpToPiasters(id){const v=$(id).value;if(v==="")return null;const n=Number(v);return Number.isFinite(n)&&n>=0?Math.round(n*100):undefined}
 let currentImportBatchId=null,currentImportRows=[];
 function importMessage(value){$("excelImportMsg").textContent=value;$("excelImportMsg").classList.remove("hidden")}
+let renderedImportBatchId=null;
+function normalizeMatchText(value){
+ return String(value??"").normalize("NFKC").toLowerCase()
+  .replace(/[\u064B-\u065F\u0670]/g,"")
+  .replace(/[أإآ]/g,"ا").replace(/ى/g,"ي")
+  .replace(/[\s\u200f\u200e]+/g," ").trim();
+}
 function renderImportRows(rows,batch){
+ const sameBatch=Boolean(batch?.id&&batch.id===renderedImportBatchId);
+ const previousDecisions={};
+ if(sameBatch)document.querySelectorAll(".excel-decision").forEach(el=>{previousDecisions[el.dataset.row]=el.value});
  currentImportRows=rows||[];
  $("excelImportSummary").textContent=batch?("الملف: "+batch.filename+" — إجمالي الصفوف: "+batch.total_rows+" — الحالة: "+batch.status):"";
  $("excelImportRows").innerHTML=currentImportRows.map(r=>{
-  const item=r.item||{},issues=r.issues||[],candidates=r.candidates||[];
+  const item=r.item||{},raw=r.raw||{},issues=r.issues||[],candidates=r.candidates||[];
   const exactDuplicate=issues.some(x=>x.startsWith("يوجد صف مطابق تمامًا"));
   const invalid=!item.part_name_ar||item.part_name_ar.length>160||(item.year_from!==null&&item.year_to!==null&&item.year_to<item.year_from);
   const needsReview=issues.length>0||candidates.length>0||invalid;
   const locked=exactDuplicate||invalid||r.status!=="preview";
+  const exactCandidate=candidates.length===1?candidates[0]:null;
+  const codeConsistent=!item.part_code||!exactCandidate?.part_code||normalizeMatchText(item.part_code)===normalizeMatchText(exactCandidate.part_code);
+  const fitmentConsistent=!item.model||(exactCandidate?.fitments||[]).some(f=>
+   f.brand_id===item.brand_id&&
+   normalizeMatchText(f.model)===normalizeMatchText(item.model)&&
+   (f.year_from??null)===(item.year_from??null)&&(f.year_to??null)===(item.year_to??null)
+  );
+  const exactSuggestion=exactCandidate&&issues.length===0&&!invalid&&
+   normalizeMatchText(exactCandidate.part_name_ar)===normalizeMatchText(item.part_name_ar)&&
+   (!item.condition||!exactCandidate.condition||normalizeMatchText(exactCandidate.condition)===normalizeMatchText(item.condition))&&codeConsistent&&fitmentConsistent
+   ?"match:"+exactCandidate.id:"";
   const choices=locked?'<option value="skip">تخطي هذا الصف</option>':
    '<option value="">اختر قرارًا لهذا الصف</option><option value="create">إنشاء قطعة جديدة</option>'+
-   candidates.map(c=>{
-    const fitments=(c.fitments||[]).map(f=>[f.brand_name_ar,f.model,f.year_from??"؟",f.year_to??"؟"].join(" / ")).join("، ")||"لا يوجد توافق مسجل";
-    return '<option value="match:'+escapeHtml(c.id)+'">مطابقة: '+escapeHtml(c.part_name_ar)+' — '+escapeHtml(c.condition||"الحالة غير محددة")+' — '+escapeHtml(fitments)+' — رصيد '+Number(c.total_quantity||0)+'</option>';
+   candidates.map(candidate=>{
+    const fitments=(candidate.fitments||[]).map(f=>[f.brand_name_ar,f.model,f.year_from??"؟",f.year_to??"؟"].join(" / ")).join("، ")||"لا يوجد توافق مسجل";
+    return '<option value="match:'+escapeHtml(candidate.id)+'">مطابقة وتحديث: '+escapeHtml(candidate.part_name_ar)+' — '+escapeHtml(candidate.condition||"الحالة غير محددة")+' — بيع '+(candidate.sale_price_piasters==null?"—":(Number(candidate.sale_price_piasters)/100).toFixed(2))+' ج.م — شراء '+(candidate.purchase_price_piasters==null?"—":(Number(candidate.purchase_price_piasters)/100).toFixed(2))+' ج.م — '+escapeHtml(fitments)+' — رصيد '+Number(candidate.total_quantity||0)+'</option>';
    }).join("")+
    '<option value="skip">تخطي هذا الصف</option>';
   const warning=issues.length?issues.join(" • "):"لا توجد تحذيرات";
   const state=r.status==="preview"?"بانتظار قرارك":r.status==="applied"?"تم الاعتماد":r.status==="skipped"?"تم التخطي":"تعذر الاعتماد";
+  const field=(header,label)=>'<label>'+label+'<input type="text" data-field="'+escapeHtml(header)+'" value="'+escapeHtml(raw[header]??"")+'"></label>';
+  const editor=r.status==="preview"?'<button type="button" class="secondary editExcelRowBtn" data-row="'+Number(r.row_number)+'">تعديل بيانات الصف / استكمال الناقص</button>'+
+   '<div class="excel-edit hidden" data-edit-row="'+Number(r.row_number)+'"><div class="formgrid">'+
+   field("الماركة","الماركة")+field("اسم القطعة","اسم القطعة")+field("موديل السيارة","موديل السيارة")+
+   field("من سنة","من سنة")+field("إلى سنة","إلى سنة")+field("الكمية","الكمية")+
+   field("سعر البيع (ج.م)","سعر البيع (ج.م)")+field("سعر الشراء (ج.م)","سعر الشراء (ج.م)")+
+   field("الحالة","الحالة")+field("مكان التخزين","مكان التخزين")+field("كود القطعة","كود القطعة")+
+   '</div><label>ملاحظات<textarea data-field="ملاحظات" rows="3">'+escapeHtml(raw["ملاحظات"]??"")+'</textarea></label>'+
+   '<button type="button" class="saveExcelRowBtn" data-row="'+Number(r.row_number)+'">حفظ التعديلات وإعادة الفحص</button></div>':'';
   return '<div class="panel excel-row" data-row="'+Number(r.row_number)+'"><strong>صف '+Number(r.row_number)+' — '+escapeHtml(item.part_name_ar||"اسم القطعة غير موجود")+'</strong>'+
    '<p>الماركة: '+escapeHtml(item.brand_raw||"—")+' | الموديل: '+escapeHtml(item.model_raw||"—")+' | السنوات: '+escapeHtml(item.year_from??"—")+' إلى '+escapeHtml(item.year_to??"—")+'</p>'+
    '<p>الكمية: '+escapeHtml(item.quantity??"—")+' | المخزن: '+escapeHtml(item.location_raw||"غير محدد")+' | الكود: '+escapeHtml(item.part_code||"—")+'</p>'+
    '<p>البيع: '+escapeHtml(item.sale_price_piasters==null?"غير محدد":(Number(item.sale_price_piasters)/100).toFixed(2)+" ج.م")+' | الشراء: '+escapeHtml(item.purchase_price_piasters==null?"غير محدد":(Number(item.purchase_price_piasters)/100).toFixed(2)+" ج.م")+' | الحالة: '+escapeHtml(item.condition||"—")+'</p>'+
    '<p>ملاحظات الملف: '+escapeHtml(item.notes||"لا توجد")+'</p>'+
    '<p>مراجعة: '+escapeHtml(warning)+' | الحالة: '+escapeHtml(state)+'</p>'+
-   (r.status==="preview"&&needsReview?'<label>مطلوب مراجعة — اختر القرار</label><select class="excel-decision" data-row="'+Number(r.row_number)+'">'+choices+'</select>':
-    r.status==="preview"?'<p class="success">سليم — سيتم إدراجه تلقائيًا عند الاعتماد</p>':'')+'</div>';
+   (r.status==="preview"&&needsReview?'<label>'+(exactSuggestion?"مطابقة مقترحة — راجعها قبل الاعتماد":"مطلوب مراجعة — اختر القرار")+'</label><select class="excel-decision" data-row="'+Number(r.row_number)+'" data-suggested="'+escapeHtml(exactSuggestion)+'">'+choices+'</select>':
+    r.status==="preview"?'<p class="success">سليم — سيتم إدراجه تلقائيًا عند الاعتماد</p>':'')+editor+'</div>';
  }).join("");
+ document.querySelectorAll(".excel-decision").forEach(el=>{if(el.dataset.suggested)el.value=el.dataset.suggested});
+ if(sameBatch)document.querySelectorAll(".excel-decision").forEach(el=>{const old=previousDecisions[el.dataset.row];if(old&&[...el.options].some(option=>option.value===old))el.value=old});
+ renderedImportBatchId=batch?.id||null;
+ document.querySelectorAll(".editExcelRowBtn").forEach(btn=>btn.onclick=()=>{
+  const editor=document.querySelector('.excel-edit[data-edit-row="'+Number(btn.dataset.row)+'"]');
+  if(editor)editor.classList.toggle("hidden");
+ });
+ document.querySelectorAll(".saveExcelRowBtn").forEach(btn=>btn.onclick=async()=>{
+  const rowNumber=Number(btn.dataset.row);
+  const editor=document.querySelector('.excel-edit[data-edit-row="'+rowNumber+'"]');
+  if(!editor)return;
+  const values={};
+  editor.querySelectorAll("[data-field]").forEach(input=>{values[input.dataset.field]=input.value});
+  try{
+   btn.disabled=true;btn.textContent="جارٍ إعادة فحص الصف...";
+   await api("/api/admin/imports/"+encodeURIComponent(currentImportBatchId)+"/rows/"+rowNumber,{method:"PUT",body:JSON.stringify({values})});
+   await loadImportBatch(currentImportBatchId);
+   importMessage("تم حفظ التعديلات وإعادة فحص الصف. راجع التحذيرات وقرار المطابقة من جديد.");
+  }catch(e){importMessage(e.message)}
+  finally{btn.disabled=false;btn.textContent="حفظ التعديلات وإعادة الفحص"}
+ });
  $("applyExcelBtn").classList.toggle("hidden",!currentImportBatchId||!currentImportRows.some(r=>r.status==="preview"));
 }
 async function loadImportBatch(batchId){
@@ -209,8 +286,10 @@ $("previewExcelBtn").onclick=async()=>{
   if(!rows.length)throw Error("ورقة العمل فارغة.");
   const data=await api("/api/admin/imports/preview",{method:"POST",body:JSON.stringify({filename:file.name,rows})});
   currentImportBatchId=data.batch_id;
-  renderImportRows(data.rows,{filename:data.filename,total_rows:data.total_rows,status:"preview"});
-  importMessage("تمت قراءة الملف وإنشاء المعاينة دون تعديل المنتجات أو الأرصدة. راجع التحذيرات واختر قرارًا لكل صف.");
+  renderImportRows(data.rows,{id:data.batch_id,filename:data.filename,total_rows:data.total_rows,status:"preview"});
+  importMessage(data.previous_import
+   ?"تنبيه: هذا الملف سبق استيراده بتاريخ "+new Date(data.previous_import.created_at).toLocaleString("ar-EG")+". تمت مقارنة محتواه وإنشاء معاينة مزامنة جديدة؛ راجع الفروق قبل الاعتماد."
+   :"تمت قراءة الملف وإنشاء المعاينة دون تعديل المنتجات أو الأرصدة. راجع التحذيرات واختر قرارًا لكل صف.");
  }catch(e){
   if(e.data?.existing_batch?.id){try{await loadImportBatch(e.data.existing_batch.id);importMessage(e.message+" تم فتح المعاينة السابقة.");}catch(inner){importMessage(inner.message)}}else importMessage(e.message)
  }finally{$("previewExcelBtn").disabled=false}
@@ -228,7 +307,7 @@ $("applyExcelBtn").onclick=async()=>{
    if(!select.value)throw Error("راجع الصف واختر قرارًا له. الصف "+r.row_number);
    decisions[String(r.row_number)]=select.value;
   }
-  if(!confirm("هل راجعت كل الصفوف وتريد تنفيذ القرارات؟ سيتم تحديث أرصدة المخازن حسب الكميات المحددة في الملف."))return;
+  if(!confirm("هل راجعت كل الصفوف وتريد تنفيذ القرارات؟\n\nعند مطابقة قطعة موجودة: سيتم تحديث الحقول غير الفارغة من ملف Excel (الاسم والحالة والكود والأسعار والملاحظات)، مع الاحتفاظ بالقيم القديمة في الخانات الفارغة. الصفر قيمة فعلية.\n\nالكمية في الملف ستصبح الرصيد المستهدف للمخزن المحدد، وليست كمية تضاف فوق الرصيد الحالي. توافقات السيارات الجديدة ستظل بحاجة إلى تأكيد."))return;
   $("applyExcelBtn").disabled=true;
   const result=await api("/api/admin/imports/"+encodeURIComponent(currentImportBatchId)+"/apply",{method:"POST",body:JSON.stringify({decisions})});
   const locations=(result.report?.by_location||[]).map(x=>x.location_name+": "+x.product_count+" أصناف / "+x.total_quantity+" قطعة").join("؛ ")||"لا توجد أرصدة مسجلة";
@@ -237,7 +316,33 @@ $("applyExcelBtn").onclick=async()=>{
  }catch(e){importMessage(e.message)}finally{$("applyExcelBtn").disabled=false}
 };
 async function loadAdmin(){
- const [p,m,h]=await Promise.all([api("/api/admin/products"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12")]);
+ const [p,m,h,a]=await Promise.all([api("/api/admin/products"),api("/api/admin/meta"),api("/api/admin/stock-movements?limit=12"),api("/api/admin/analytics")]);
+ const fmtNumber=value=>Number(value||0).toLocaleString("ar-EG");
+ const fmtMoney=value=>(Number(value||0)/100).toLocaleString("ar-EG",{minimumFractionDigits:2,maximumFractionDigits:2})+" ج.م";
+ const o=a.overview||{},s=a.stock||{};
+ const metrics=[
+  ["المنتجات النشطة",fmtNumber(o.active_products),"سجلات غير مؤرشفة"],
+  ["إجمالي الوحدات",fmtNumber(s.total_units),"في جميع أماكن التخزين"],
+  ["القطع المنشورة",fmtNumber(o.public_products),"ظاهرة في الكتالوج العام"],
+  ["توافقات تحتاج مراجعة",fmtNumber(o.with_pending_fitment),"لا تُنشر قبل التأكيد"],
+  ["قيمة الشراء التقديرية",fmtMoney(s.estimated_purchase_value_piasters),"حسب سعر الشراء المسجل"],
+  ["قيمة البيع التقديرية",fmtMoney(s.estimated_sale_value_piasters),"لو تم بيع الكميات الحالية"],
+  ["قطع بدون كود",fmtNumber(o.missing_codes),"تحتاج استكمالًا عند توفر الكود"],
+ ];
+ $("analyticsCards").innerHTML=metrics.map((x,i)=>'<div class="metric"><span>'+x[0]+'</span><strong>'+x[1]+'</strong><small>'+x[2]+'</small></div>').join("");
+ const renderBars=(items,labelKey,valueKey)=>{
+  const max=Math.max(1,...items.map(x=>Number(x[valueKey]||0)));
+  return items.length?items.map(x=>{
+   const value=Number(x[valueKey]||0),width=Math.max(0,Math.min(100,value/max*100));
+   return '<div class="bar-row"><div class="bar-meta"><span>'+escapeHtml(x[labelKey]||"غير محدد")+'</span><strong>'+fmtNumber(value)+'</strong></div><div class="bar-track"><div class="bar-fill" style="width:'+width.toFixed(1)+'%"></div></div></div>';
+  }).join(""):'<p class="muted">لا توجد بيانات كافية حتى الآن.</p>';
+ };
+ $("analyticsLocations").innerHTML=renderBars(a.by_location||[],"name","total_units");
+ $("analyticsBrands").innerHTML=renderBars(a.by_brand||[],"name_ar","product_count");
+ const movementNames={in:"إضافة",out:"صرف",adjustment:"تسوية",transfer_in:"تحويل وارد",transfer_out:"تحويل صادر"};
+ $("analyticsMovements").innerHTML=(a.movements_30d||[]).length?'<table><thead><tr><th>نوع الحركة</th><th>عدد العمليات</th><th>الوحدات</th></tr></thead><tbody>'+(a.movements_30d||[]).map(x=>'<tr><td>'+escapeHtml(movementNames[x.movement_type]||x.movement_type)+'</td><td>'+fmtNumber(x.movement_count)+'</td><td>'+fmtNumber(x.units)+'</td></tr>').join("")+'</tbody></table>':'<p class="muted">لا توجد حركات خلال آخر 30 يومًا.</p>';
+ $("analyticsQuality").innerHTML='<p>بدون سعر بيع: <strong>'+fmtNumber(o.missing_sale_prices)+'</strong></p><p>بدون سعر شراء: <strong>'+fmtNumber(o.missing_purchase_prices)+'</strong></p><p>سعر الشراء أعلى من البيع: <strong>'+fmtNumber(o.purchase_exceeds_sale)+'</strong></p><p>بدون توافق سيارة: <strong>'+fmtNumber(o.without_fitment)+'</strong></p><p>أرصدة بدون سعر شراء: <strong>'+fmtNumber(s.balances_without_purchase_price)+'</strong></p>';
+ $("analyticsImports").innerHTML=(a.recent_imports||[]).length?'<table><thead><tr><th>الملف</th><th>الحالة</th><th>صفوف</th><th>إنشاء</th><th>تحديث</th><th>تخطي</th><th>أخطاء</th></tr></thead><tbody>'+(a.recent_imports||[]).map(x=>'<tr><td>'+escapeHtml(x.filename)+'</td><td>'+escapeHtml(x.status)+'</td><td>'+fmtNumber(x.total_rows)+'</td><td>'+fmtNumber(x.created_count)+'</td><td>'+fmtNumber(x.updated_count)+'</td><td>'+fmtNumber(x.skipped_count)+'</td><td>'+fmtNumber(x.error_count)+'</td></tr>').join("")+'</tbody></table>':'<p class="muted">لا توجد عمليات استيراد محفوظة.</p>';
  $("brandId").innerHTML='<option value="">اختر الماركة</option>'+m.brands.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name_ar)+'</option>').join("");
  $("movementProduct").innerHTML='<option value="">اختر القطعة</option>'+p.data.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.part_name_ar)+' — '+escapeHtml(x.condition||"الحالة غير محددة")+' — رصيد إجمالي: '+Number(x.total_quantity||0)+' — #'+escapeHtml(x.id.slice(0,8))+'</option>').join("");
  $("movementLocation").innerHTML='<option value="">اختر المخزن</option>'+m.locations.filter(x=>x.active).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join("");
@@ -247,6 +352,52 @@ async function loadAdmin(){
  document.querySelectorAll(".editBtn").forEach(btn=>btn.onclick=()=>openExistingProductForReview(btn.dataset.id));
  document.querySelectorAll(".archiveBtn").forEach(btn=>btn.onclick=async()=>{if(!confirm("أرشفة القطعة؟ ستختفي من الكتالوج العام مع الاحتفاظ بسجلها."))return;try{await api("/api/admin/products/"+btn.dataset.id,{method:"DELETE",body:JSON.stringify({version:Number(btn.dataset.version)})});message("adminMsg","تمت أرشفة القطعة.");await loadAdmin()}catch(e){message("adminMsg",e.message)}});
 }
+$("exportExcelBtn").onclick=async()=>{
+ try{
+  $("exportExcelBtn").disabled=true;$("exportExcelMsg").textContent="جارٍ تجهيز ملف Excel...";
+  const result=await api("/api/admin/export-data");
+  if(result.truncated)throw Error("البيانات أكبر من حد التصدير الحالي؛ لم يتم إنشاء ملف ناقص.");
+  const XLSX=await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+  const headers=["الماركة","اسم القطعة","موديل السيارة","من سنة","إلى سنة","الكمية","سعر البيع (ج.م)","سعر الشراء (ج.م)","الحالة","مكان التخزين","كود القطعة","ملاحظات"];
+  const rows=[headers];
+  for(const product of result.data||[]){
+   const fitments=product.fitments||[],balances=product.balances||[];
+   const locations=balances.length?balances:[{location_name:"",quantity:null}];
+   const baseFitment=fitments[0]||{};
+   const makeRow=(fitment,location,includeQuantity=true)=>[
+    fitment?.brand_name_ar||"",product.part_name_ar||"",fitment?.model||"",
+    fitment?.year_from??"",fitment?.year_to??"",includeQuantity?(location?.quantity??""):"",
+    product.sale_price_piasters==null?"":Number(product.sale_price_piasters)/100,
+    product.purchase_price_piasters==null?"":Number(product.purchase_price_piasters)/100,
+    product.condition||"",location?.location_name||"",product.part_code||"",product.internal_notes||""
+   ];
+   locations.forEach((location,index)=>rows.push(makeRow(index===0?baseFitment:null,location,true)));
+   fitments.slice(1).forEach(fitment=>rows.push(makeRow(fitment,null,false)));
+  }
+  const workbook=XLSX.utils.book_new();
+  const worksheet=XLSX.utils.aoa_to_sheet(rows);
+  worksheet["!cols"]=[{wch:18},{wch:30},{wch:22},{wch:10},{wch:10},{wch:12},{wch:18},{wch:18},{wch:14},{wch:20},{wch:18},{wch:36}];
+  XLSX.utils.book_append_sheet(workbook,worksheet,"المخزون");
+  const date=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(workbook,"Bakkar_Inventory_"+date+".xlsx");
+  $("exportExcelMsg").textContent="تم تجهيز "+Number(rows.length-1).toLocaleString("ar-EG")+" صفًا.";
+ }catch(e){$("exportExcelMsg").textContent=e.message||"تعذر تصدير الملف."}
+ finally{$("exportExcelBtn").disabled=false}
+};
+$("backupDataBtn").onclick=async()=>{
+ try{
+  $("backupDataBtn").disabled=true;$("backupDataMsg").textContent="جارٍ تجهيز النسخة الاحتياطية...";
+  const backup=await api("/api/admin/backup-data");
+  if(backup.format!=="bakkar-inventory-backup"||!backup.checksum_sha256)throw Error("ملف النسخة الاحتياطية غير مكتمل.");
+  const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement("a");
+  link.href=url;link.download="Bakkar_Full_Backup_"+new Date().toISOString().replace(/[:.]/g,"-")+".json";
+  document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+  $("backupDataMsg").textContent="تم تجهيز النسخة. عدد السجلات: "+Object.values(backup.counts||{}).reduce((sum,value)=>sum+Number(value||0),0).toLocaleString("ar-EG")+".";
+ }catch(e){$("backupDataMsg").textContent=e.message||"تعذر إنشاء النسخة الاحتياطية."}
+ finally{$("backupDataBtn").disabled=false}
+};
 $("productForm").onsubmit=async e=>{e.preventDefault();try{
  const payload=buildProductPayload();
  if(editingProductId){
@@ -275,10 +426,10 @@ $("movementForm").onsubmit=async e=>{e.preventDefault();const q=Number($("moveme
  }catch(e){message("adminMsg",e.message);await refreshAvailableStock()}
 };
 function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-$("loginBtn").onclick=async()=>{try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});$("password").value="";await refresh()}catch(e){message("loginMsg",e.message)}};
+$("loginBtn").onclick=async()=>{const btn=$("loginBtn");const original=btn.textContent;btn.disabled=true;btn.textContent="جارٍ التحقق...";$("loginMsg").classList.add("hidden");try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});$("password").value="";await refresh()}catch(e){message("loginMsg",e.message||"تعذر الاتصال بخدمة تسجيل الدخول. تحقق من الاتصال ثم حاول مرة أخرى.")}finally{btn.disabled=false;btn.textContent=original}};
 $("setupBtn").onclick=async()=>{try{await api("/api/admin/setup",{method:"POST",body:JSON.stringify({email:$("setupEmail").value,setup_key:$("setupKey").value,password:$("setupPassword").value})});$("setupKey").value="";$("setupPassword").value="";await refresh()}catch(e){message("setupMsg",e.message)}};
 $("logout").onclick=async()=>{try{await api("/api/admin/logout",{method:"POST",body:"{}"})}finally{show("login")}};
-(async()=>{try{const s=await api("/api/admin/status");if(s.needs_setup)show("setup");else await refresh()}catch(e){show("login")}})();
+(async()=>{try{const s=await api("/api/admin/status");if(s.needs_setup)show("setup");else await refresh()}catch(e){show("login");message("loginMsg","تعذر الاتصال بخدمة الإدارة: "+e.message)}})();
 </script></main></body></html>`;
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -487,6 +638,134 @@ async function handleAdmin(request, url, env) {
       WHERE p.archived_at IS NULL GROUP BY p.id ORDER BY p.updated_at DESC,p.id ASC LIMIT ?
     `).bind(limit).all();
     return json({ data: result.results || [] });
+  }
+  if (path === "/api/admin/analytics" && request.method === "GET") {
+    const [productStats, stockStats, locations, brands, movements, imports] = await Promise.all([
+      env.DB.prepare(`
+        SELECT COUNT(*) AS active_products,
+          SUM(CASE WHEN is_public=1 THEN 1 ELSE 0 END) AS public_products,
+          SUM(CASE WHEN part_code IS NULL OR trim(part_code)='' THEN 1 ELSE 0 END) AS missing_codes,
+          SUM(CASE WHEN sale_price_piasters IS NULL THEN 1 ELSE 0 END) AS missing_sale_prices,
+          SUM(CASE WHEN purchase_price_piasters IS NULL THEN 1 ELSE 0 END) AS missing_purchase_prices,
+          SUM(CASE WHEN purchase_price_piasters IS NOT NULL AND sale_price_piasters IS NOT NULL AND purchase_price_piasters>sale_price_piasters THEN 1 ELSE 0 END) AS purchase_exceeds_sale,
+          SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM product_fitments f WHERE f.product_id=p.id) THEN 1 ELSE 0 END) AS without_fitment,
+          SUM(CASE WHEN EXISTS (SELECT 1 FROM product_fitments f WHERE f.product_id=p.id AND f.compatibility_status='pending') THEN 1 ELSE 0 END) AS with_pending_fitment
+        FROM products p WHERE archived_at IS NULL
+      `).first(),
+      env.DB.prepare(`
+        SELECT COALESCE(SUM(ib.quantity),0) AS total_units,
+          COALESCE(SUM(ib.quantity * COALESCE(p.purchase_price_piasters,0)),0) AS estimated_purchase_value_piasters,
+          COALESCE(SUM(ib.quantity * COALESCE(p.sale_price_piasters,0)),0) AS estimated_sale_value_piasters,
+          SUM(CASE WHEN p.purchase_price_piasters IS NULL AND ib.quantity>0 THEN 1 ELSE 0 END) AS balances_without_purchase_price
+        FROM inventory_balances ib JOIN products p ON p.id=ib.product_id
+        WHERE p.archived_at IS NULL
+      `).first(),
+      env.DB.prepare(`
+        SELECT l.id,l.name,COUNT(DISTINCT p.id) AS product_count,
+          COALESCE(SUM(CASE WHEN p.id IS NOT NULL THEN ib.quantity ELSE 0 END),0) AS total_units
+        FROM locations l LEFT JOIN inventory_balances ib ON ib.location_id=l.id
+        LEFT JOIN products p ON p.id=ib.product_id AND p.archived_at IS NULL
+        WHERE l.active=1 GROUP BY l.id,l.name ORDER BY total_units DESC,l.name
+      `).all(),
+      env.DB.prepare(`
+        SELECT b.id,b.name_ar,COUNT(q.product_id) AS product_count,
+          COALESCE(SUM(q.total_quantity),0) AS total_units
+        FROM brands b
+        LEFT JOIN (
+          SELECT DISTINCT f.brand_id,p.id AS product_id,
+            COALESCE((SELECT SUM(ib.quantity) FROM inventory_balances ib WHERE ib.product_id=p.id),0) AS total_quantity
+          FROM product_fitments f JOIN products p ON p.id=f.product_id
+          WHERE p.archived_at IS NULL
+        ) q ON q.brand_id=b.id
+        GROUP BY b.id,b.name_ar ORDER BY product_count DESC,b.name_ar
+      `).all(),
+      env.DB.prepare(`
+        SELECT movement_type,COUNT(*) AS movement_count,
+          COALESCE(SUM(ABS(quantity_delta)),0) AS units
+        FROM stock_movements
+        WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days')
+        GROUP BY movement_type ORDER BY movement_type
+      `).all(),
+      env.DB.prepare(`
+        SELECT filename,status,total_rows,created_count,updated_count,skipped_count,error_count,created_at,applied_at
+        FROM import_batches ORDER BY created_at DESC LIMIT 8
+      `).all(),
+    ]);
+    return json({
+      overview: productStats || {},
+      stock: stockStats || {},
+      by_location: locations.results || [],
+      by_brand: brands.results || [],
+      movements_30d: movements.results || [],
+      recent_imports: imports.results || [],
+    });
+  }
+  if (path === "/api/admin/backup-data" && request.method === "GET") {
+    const statements = [
+      env.DB.prepare("SELECT * FROM brands ORDER BY id"),
+      env.DB.prepare("SELECT * FROM categories ORDER BY id"),
+      env.DB.prepare("SELECT * FROM locations ORDER BY id"),
+      env.DB.prepare("SELECT * FROM products ORDER BY id"),
+      env.DB.prepare("SELECT * FROM product_fitments ORDER BY id"),
+      env.DB.prepare("SELECT * FROM inventory_balances ORDER BY product_id,location_id"),
+      env.DB.prepare("SELECT * FROM stock_movements ORDER BY created_at,id"),
+      env.DB.prepare("SELECT * FROM audit_log ORDER BY created_at,id"),
+      env.DB.prepare("SELECT * FROM import_batches ORDER BY created_at,id"),
+      env.DB.prepare("SELECT * FROM import_batch_rows ORDER BY batch_id,row_number"),
+    ];
+    const results = await env.DB.batch(statements);
+    const tableNames = [
+      "brands","categories","locations","products","product_fitments",
+      "inventory_balances","stock_movements","audit_log","import_batches","import_batch_rows",
+    ];
+    const data = Object.fromEntries(tableNames.map((name,index)=>[name,results[index]?.results||[]]));
+    const counts = Object.fromEntries(tableNames.map(name=>[name,data[name].length]));
+    const backup = {
+      format: "bakkar-inventory-backup",
+      format_version: 1,
+      schema_version: 9,
+      exported_at: new Date().toISOString(),
+      counts,
+      excluded_tables: ["admin_credentials","admin_sessions","login_attempts","login_ip_attempts","staff_accounts"],
+      data,
+    };
+    const bytes = new TextEncoder().encode(JSON.stringify(backup));
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256",bytes));
+    const checksum = [...digest].map(value=>value.toString(16).padStart(2,"0")).join("");
+    return json({ ...backup, checksum_sha256: checksum });
+  }
+  if (path === "/api/admin/export-data" && request.method === "GET") {
+    const [count, result] = await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) AS total FROM products WHERE archived_at IS NULL").first(),
+      env.DB.prepare(`
+        SELECT p.id,p.part_name_ar,p.condition,p.part_code,p.sale_price_piasters,
+          p.purchase_price_piasters,p.internal_notes,
+          COALESCE((
+            SELECT json_group_array(json_object(
+              'brand_name_ar',b.name_ar,'model',f.model,'year_from',f.year_from,
+              'year_to',f.year_to,'compatibility_status',f.compatibility_status
+            ))
+            FROM product_fitments f JOIN brands b ON b.id=f.brand_id
+            WHERE f.product_id=p.id
+          ),'[]') AS fitments_json,
+          COALESCE((
+            SELECT json_group_array(json_object(
+              'location_id',l.id,'location_name',l.name,'quantity',ib.quantity
+            ))
+            FROM inventory_balances ib JOIN locations l ON l.id=ib.location_id
+            WHERE ib.product_id=p.id
+            ORDER BY l.name
+          ),'[]') AS balances_json
+        FROM products p WHERE p.archived_at IS NULL
+        ORDER BY p.updated_at DESC,p.id ASC LIMIT 10000
+      `).all(),
+    ]);
+    const rows = (result.results || []).map(row => ({
+      ...row,
+      fitments: JSON.parse(row.fitments_json || "[]"),
+      balances: JSON.parse(row.balances_json || "[]"),
+    }));
+    return json({ total: Number(count?.total || 0), exported: rows.length, truncated: rows.length < Number(count?.total || 0), data: rows });
   }
   const importResponse = await handleExcelImport(request, url, env, session);
   if (importResponse) return importResponse;
