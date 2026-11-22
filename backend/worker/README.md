@@ -52,7 +52,7 @@ These routes are implemented on the `feature/inventory-management` branch only. 
 
 ## Deployment and test status
 
-- Migrations `0001` through `0004` are applied to the isolated test D1 database only. Migration `0004` seeds Hyundai, Kia and SsangYong vehicle brands. Production D1 remains untouched.
+- Migrations `0001` through `0005` are applied to the isolated test D1 database only. Migration `0004` seeds Hyundai, Kia and SsangYong vehicle brands; migration `0005` keeps balances synchronized from stock movements and rejects negative stock. Production D1 remains untouched.
 - The hardened source is deployed to the isolated test Worker, bound to `bakkar-inventory-test`.
 - The test Worker retains `OWNER_EMAIL`; the one-time `BOOTSTRAP_SECRET` was removed after owner setup.
 - Production Worker and production D1 have not been changed.
@@ -99,7 +99,7 @@ Use synthetic test data locally. Do not point local development at production D1
 - Added owner-only product create/read/update/archive routes, vehicle-fitment validation, reference-data reads, storage-location creation, stock-movement creation and movement-history reads.
 - Added an initial Arabic owner dashboard for those operations. Product editing preserves existing category, aliases, internal notes and additional vehicle fitments not currently exposed as editable fields.
 - Product updates use a version field to reject stale edits. Product archive is soft-delete so references and audit history remain intact.
-- Stock movement requests validate signed quantities and prevent negative balances; movements are designed to be append-only under the existing database triggers.
+- Stock movements are the source of truth: database triggers apply each inserted movement to the balance and reject a movement that would make stock negative. The API no longer relies on connection-scoped `changes()` state across a D1 batch.
 - Added `wrangler.test.jsonc` and explicit `dev:test` / `deploy:test` scripts so test commands target the isolated test D1 database, not the production database configured in `wrangler.jsonc`.
 - Added a GitHub Actions syntax check for both Worker modules.
 - Not yet verified: deployed runtime behavior for the new routes, atomic stock updates, concurrency behavior, or browser UI integration. Do not deploy to either Worker until syntax checks and test-environment validation are complete.
