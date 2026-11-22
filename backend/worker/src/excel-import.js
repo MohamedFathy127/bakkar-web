@@ -304,7 +304,7 @@ async function handleExcelImport(request, url, env, session) {
             CASE WHEN ? > COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0)
               THEN 'in' ELSE 'adjustment' END,
             ? - COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0),
-            ?,?,?,?,?,?
+            ?,?,?,?,?
           WHERE ? <> COALESCE((SELECT quantity FROM inventory_balances WHERE product_id=? AND location_id=?),0)
         `).bind(
           crypto.randomUUID(), productId, item.location_id, crypto.randomUUID(),
